@@ -39,6 +39,7 @@ model Book {
   readDate  DateTime?
   pages     Int?
   citations String?  // Store as JSON string or text
+  isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
