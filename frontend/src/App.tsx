@@ -30,6 +30,10 @@ import {
   ListItemButton,
   ListItemText,
   Checkbox,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
@@ -51,9 +55,11 @@ interface Book {
   title: string;
   summary?: string;
   rating?: number;
-  pages?: number;
   coverUrl?: string;
   citations?: string[];
+  isRead?: boolean;
+  readDate?: string;
+  smut?: string[];
   author: Author;
   series?: Series;
 }
@@ -71,7 +77,6 @@ interface OpenLibraryBook {
   cover_i?: number;
   first_publish_year?: number;
   isbn?: string[];
-  number_of_pages_median?: number;
   series?: string[];
 }
 
@@ -97,8 +102,9 @@ function BookList() {
     seriesTitle: "",
     summary: "",
     rating: "",
-    pages: "",
     citations: "",
+    smut: "",
+    tomeNb: -1,
   });
 
   const [pendingBook, setPendingBook] = useState<PendingBook | null>(null);
@@ -109,6 +115,7 @@ function BookList() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<OpenLibraryBook[]>([]);
   const [searching, setSearching] = useState(false);
+  const [selectedBooksToRead, setSelectedBooksToRead] = useState<Book[]>([]);
 
   // Create collection functionality
   const [createCollectionOpen, setCreateCollectionOpen] = useState(false);
@@ -142,6 +149,40 @@ function BookList() {
     }
   };
 
+  // --- TOGGLE SELECTION ---
+  const handleToggleSelectToRead = (book) => {
+    setSelectedBooksToRead((prev) =>
+      prev.includes(book)
+        ? prev.filter((b) => b.id !== book.id)
+        : [...prev, book]
+    );
+  };
+
+  // --- MARK SELECTED BOOKS AS READ ---
+  const handleMarkSelectedAsRead = async () => {
+    try {
+      await Promise.all(
+        selectedBooksToRead.map((b) =>
+          fetch(`${API_URL}/books/${b.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...b,
+              seriesTitle: b.series?.title,
+              isRead: true,
+              readDate: new Date(),
+            }),
+          })
+        )
+      );
+
+      setSelectedBooksToRead([]);
+      fetchBooks();
+    } catch (err) {
+      console.error("Erreur mark-as-read:", err);
+      alert("Impossible de marquer comme lu");
+    }
+  };
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -177,8 +218,9 @@ function BookList() {
       seriesTitle: book.series?.[0] || "",
       summary: "",
       rating: "",
-      pages: book.number_of_pages_median?.toString() || "",
       citations: "",
+      smut: "",
+      tomeNb: -1,
     });
 
     // Store cover URL separately if needed
@@ -193,10 +235,14 @@ function BookList() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newCollectionName != "" && form.seriesTitle === "__new__")
+      form.seriesTitle = newCollectionName;
+
     const payload = {
       ...form,
       rating: form.rating ? parseInt(form.rating) : null,
       citations: form.citations ? form.citations.split(";") : [],
+      smut: form.smut ? form.smut.split(";") : [],
     };
 
     try {
@@ -221,41 +267,15 @@ function BookList() {
         seriesTitle: "",
         summary: "",
         rating: "",
-        pages: "",
         citations: "",
+        smut: "",
+        tomeNb: -1,
       });
     } catch (err) {
       console.error("Erreur addBook:", err);
     }
-  };
-
-  const handleConfirm = async () => {
-    if (!pendingBook) return;
-
-    try {
-      await fetch(`${API_URL}/books/${pendingBook.book.id}/confirm`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          coverUrl: pendingBook.coverUrl,
-          nextSeriesTitle: pendingBook.nextSeriesTitle,
-        }),
-      });
-    } catch (err) {
-      console.error("Erreur confirmBook:", err);
-    }
-
-    setOpenDialog(false);
-    setPendingBook(null);
-    fetchBooks();
-    fetchSeries();
-  };
-
-  const handleIgnore = () => {
-    setOpenDialog(false);
-    setPendingBook(null);
-    fetchBooks();
-    fetchSeries();
+    setCreateCollectionOpen(false);
+    setNewCollectionName("");
   };
 
   const handleBookClick = (bookId: number) => {
@@ -378,13 +398,43 @@ function BookList() {
                 />
               </Grid>
               <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Série (optionnel)"
-                  name="seriesTitle"
-                  value={form.seriesTitle}
-                  onChange={handleChange}
-                />
+                <FormControl fullWidth>
+                  <InputLabel id="series-select-label">
+                    Collection / Série (optionnel)
+                  </InputLabel>
+                  <Select
+                    labelId="series-select-label"
+                    value={form.seriesTitle}
+                    label="Collection / Série (optionnel)"
+                    onChange={(e) =>
+                      setForm({ ...form, seriesTitle: e.target.value })
+                    }
+                  >
+                    <MenuItem value="">
+                      <em>Aucune collection</em>
+                    </MenuItem>
+                    {series.map((s) => (
+                      <MenuItem key={s.id} value={s.title}>
+                        {s.title} ({s.books?.length || 0} livre
+                        {(s.books?.length || 0) > 1 ? "s" : ""})
+                      </MenuItem>
+                    ))}
+                    <MenuItem value="__new__">
+                      <em>+ Créer une nouvelle collection...</em>
+                    </MenuItem>
+                  </Select>
+                </FormControl>
+
+                {form.seriesTitle === "__new__" && (
+                  <TextField
+                    fullWidth
+                    label="Nom de la nouvelle collection"
+                    onChange={(e) => setNewCollectionName(e.target.value)}
+                    value={newCollectionName}
+                    sx={{ mt: 2 }}
+                    autoFocus
+                  />
+                )}
               </Grid>
               <Grid item xs={12}>
                 <TextField
@@ -397,26 +447,40 @@ function BookList() {
                   rows={3}
                 />
               </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  type="number"
-                  label="Pages"
-                  name="pages"
-                  value={form.pages}
-                  onChange={handleChange}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  type="number"
-                  label="Note (1 à 5)"
-                  name="rating"
-                  value={form.rating}
-                  onChange={handleChange}
-                  InputProps={{ inputProps: { min: 1, max: 5 } }}
-                />
+              <Grid container xs={10} spacing={2}>
+                <Grid item xs={12} sm={5}>
+                  <Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      gutterBottom
+                    >
+                      Note
+                    </Typography>
+                    <Rating
+                      value={form.rating ? parseInt(form.rating) : 0}
+                      onChange={(event, newValue) => {
+                        setForm({
+                          ...form,
+                          rating: newValue ? newValue.toString() : "",
+                        });
+                      }}
+                      size="large"
+                      sx={{ mt: 0.5 }}
+                    />
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Numéro du Tome"
+                    name="tomeNb"
+                    value={form.tomeNb}
+                    onChange={handleChange}
+                    multiline
+                    rows={1}
+                  />
+                </Grid>
               </Grid>
               <Grid item xs={12}>
                 <TextField
@@ -424,6 +488,15 @@ function BookList() {
                   label="Citations (séparées par ;)"
                   name="citations"
                   value={form.citations}
+                  onChange={handleChange}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Chapitre de Smut (séparées par ;)"
+                  name="smut"
+                  value={form.smut}
                   onChange={handleChange}
                 />
               </Grid>
@@ -443,69 +516,116 @@ function BookList() {
           <Typography variant="h4" gutterBottom>
             📖 Liste des livres
           </Typography>
+          <Button
+            variant="contained"
+            color="success"
+            disabled={selectedBooksToRead.length === 0}
+            onClick={handleMarkSelectedAsRead}
+            sx={{ mb: 2 }}
+          >
+            Marquer comme lu ({selectedBooksToRead.length})
+          </Button>
           <List>
-            {books.map((b) => (
-              <Paper
-                key={b.id}
-                sx={{
-                  mb: 2,
-                  p: 2,
-                  display: "flex",
-                  gap: 2,
-                  cursor: "pointer",
-                  transition: "all 0.3s ease",
-                  "&:hover": {
-                    transform: "translateY(-2px)",
-                    boxShadow: 6,
-                    backgroundColor: "action.hover",
-                  },
-                }}
-                elevation={2}
-                onClick={() => handleBookClick(b.id)}
-              >
-                {b.coverUrl && (
-                  <Box
-                    component="img"
-                    src={b.coverUrl}
-                    alt={b.title}
-                    sx={{
-                      width: 100,
-                      height: 140,
-                      objectFit: "cover",
-                      borderRadius: 1,
-                    }}
-                  />
-                )}
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                    {b.title}
-                  </Typography>
-                  <Typography variant="subtitle2" color="text.secondary">
-                    {b.author?.name} {b.series ? `- ${b.series.title}` : ""}
-                  </Typography>
-                  {b.rating && (
-                    <Box sx={{ mt: 1 }}>
-                      <Rating value={b.rating} readOnly size="small" />
-                    </Box>
-                  )}
-                  {b.summary && (
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        mt: 1,
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
+            {books.map(
+              (b) =>
+                !b.isRead && (
+                  <ListItem disablePadding>
+                    <ListItemButton
+                      onClick={() => handleToggleSelectToRead(b)}
+                      sx={{ alignItems: "flex-start" }}
                     >
-                      {b.summary}
-                    </Typography>
-                  )}
-                </Box>
-              </Paper>
-            ))}
+                      <Checkbox
+                        checked={selectedBooksToRead.includes(b)}
+                        tabIndex={-1}
+                        disableRipple
+                        sx={{ mt: 1 }}
+                      />
+                      <Paper
+                        key={b.id}
+                        sx={{
+                          mb: 2,
+                          p: 2,
+                          display: "flex",
+                          gap: 2,
+                          cursor: "pointer",
+                          transition: "all 0.3s ease",
+                          "&:hover": {
+                            transform: "translateY(-2px)",
+                            boxShadow: 6,
+                            backgroundColor: "action.hover",
+                          },
+                        }}
+                        elevation={2}
+                        onClick={() => handleBookClick(b.id)}
+                      >
+                        {b.coverUrl && (
+                          <Box
+                            component="img"
+                            src={b.coverUrl}
+                            alt={b.title}
+                            sx={{
+                              width: 100,
+                              height: 140,
+                              objectFit: "cover",
+                              borderRadius: 1,
+                            }}
+                          />
+                        )}
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                            {b.title}
+                          </Typography>
+                          <Typography
+                            variant="subtitle2"
+                            color="text.secondary"
+                          >
+                            {b.author?.name}
+                          </Typography>
+                          {b.rating && (
+                            <Box sx={{ mt: 1 }}>
+                              <Rating value={b.rating} readOnly size="small" />
+                            </Box>
+                          )}
+                          {b.series && (
+                            <Chip
+                              label={`Série: ${b.series.title}`}
+                              color="primary"
+                              variant="outlined"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/series/${b.series?.id}`);
+                              }}
+                              sx={{
+                                mb: 2,
+                                cursor: "pointer",
+                                "&:hover": {
+                                  backgroundColor: "primary.light",
+                                  color: "white",
+                                },
+                              }}
+                            />
+                          )}
+                          {b.summary && (
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                mt: 1,
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {b.summary}
+                            </Typography>
+                          )}
+                        </Box>
+                      </Paper>
+                    </ListItemButton>
+                  </ListItem>
+                )
+            )}
           </List>
         </>
       ) : (
@@ -764,12 +884,6 @@ function BookList() {
                           color="primary"
                         />
                       )}
-                      {book.number_of_pages_median && (
-                        <Chip
-                          label={`${book.number_of_pages_median} pages`}
-                          size="small"
-                        />
-                      )}
                     </Box>
                   </CardContent>
                 </Card>
@@ -783,16 +897,7 @@ function BookList() {
       </Dialog>
 
       {/* Create Collection Dialog */}
-      <Dialog
-        open={createCollectionOpen}
-        onClose={() => {
-          setCreateCollectionOpen(false);
-          setNewCollectionName("");
-          setSelectedBooksForCollection([]);
-        }}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={createCollectionOpen} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Typography variant="h6" fontWeight="bold">
             Créer une nouvelle collection
@@ -802,7 +907,6 @@ function BookList() {
           <TextField
             fullWidth
             label="Nom de la collection"
-            placeholder="Ex: Harry Potter, Le Seigneur des Anneaux..."
             value={newCollectionName}
             onChange={(e) => setNewCollectionName(e.target.value)}
             sx={{ mb: 3 }}

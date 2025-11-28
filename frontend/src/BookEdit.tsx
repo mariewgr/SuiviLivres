@@ -10,6 +10,11 @@ import {
   Grid,
   CircularProgress,
   Alert,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
+  Rating,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SaveIcon from "@mui/icons-material/Save";
@@ -33,9 +38,16 @@ interface Book {
   coverUrl?: string | null;
   rating?: number | null;
   readDate?: string | null;
-  pages?: number | null;
   citations?: string | null;
+  smut?: string | null;
+  isRead?: boolean;
+  tomeNb?: number | null;
   createdAt: string;
+}
+
+interface SeriesOption {
+  id: number;
+  title: string;
 }
 
 const API_URL = "http://localhost:4000/api";
@@ -46,6 +58,7 @@ export default function BookEdit() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [allSeries, setAllSeries] = useState<SeriesOption[]>([]);
 
   const [form, setForm] = useState({
     title: "",
@@ -54,13 +67,16 @@ export default function BookEdit() {
     summary: "",
     rating: "",
     readDate: "",
-    pages: "",
     citations: "",
+    smut: "",
+    isRead: false,
+    tomeNb: -1,
     coverUrl: "",
   });
 
   useEffect(() => {
     fetchBookDetail();
+    fetchAllSeries();
   }, [id]);
 
   const fetchBookDetail = async () => {
@@ -83,6 +99,17 @@ export default function BookEdit() {
         }
       }
 
+      // Parse smut if they exist
+      let smutString = "";
+      if (book.smut) {
+        try {
+          const smutArray = JSON.parse(book.smut);
+          smutString = smutArray.join("; ");
+        } catch {
+          smutString = book.smut;
+        }
+      }
+
       // Format date for input field
       let formattedDate = "";
       if (book.readDate) {
@@ -97,9 +124,11 @@ export default function BookEdit() {
         summary: book.summary || "",
         rating: book.rating?.toString() || "",
         readDate: formattedDate,
-        pages: book.pages?.toString() || "",
         citations: citationsString,
+        smut: smutString,
         coverUrl: book.coverUrl || "",
+        isRead: book.isRead || false,
+        tomeNb: book.tomeNb || -1,
       });
       setError(null);
     } catch (err) {
@@ -108,6 +137,16 @@ export default function BookEdit() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAllSeries = async () => {
+    try {
+      const response = await fetch(`${API_URL}/series`);
+      const data = await response.json();
+      setAllSeries(data);
+    } catch (err) {
+      console.error("Error fetching series:", err);
     }
   };
 
@@ -129,9 +168,18 @@ export default function BookEdit() {
     setError(null);
 
     // Prepare citations array
-    let citationsArray;
+    let citationsArray = [];
     if (form.citations.trim()) {
       citationsArray = form.citations
+        .split(";")
+        .map((c) => c.trim())
+        .filter((c) => c.length > 0);
+    }
+
+    // Prepare smut array
+    let smutArray = [];
+    if (form.smut.trim()) {
+      smutArray = form.smut
         .split(";")
         .map((c) => c.trim())
         .filter((c) => c.length > 0);
@@ -144,8 +192,10 @@ export default function BookEdit() {
       summary: form.summary.trim() || null,
       rating: form.rating ? parseInt(form.rating) : null,
       readDate: form.readDate || null,
-      pages: form.pages ? parseInt(form.pages) : null,
       citations: citationsArray,
+      smut: smutArray,
+      isRead: form.isRead,
+      tomeNb: form.tomeNb,
       coverUrl: form.coverUrl.trim() || null,
     };
 
@@ -260,17 +310,50 @@ export default function BookEdit() {
               />
             </Grid>
 
-            {/* Series */}
+            {/* Series Dropdown */}
             <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Série (optionnel)"
-                name="seriesTitle"
-                value={form.seriesTitle}
-                onChange={handleChange}
-                disabled={saving}
-                placeholder="Ex: Harry Potter"
-              />
+              <FormControl fullWidth disabled={saving}>
+                <InputLabel id="series-select-label">
+                  Collection / Série
+                </InputLabel>
+                <Select
+                  labelId="series-select-label"
+                  value={form.seriesTitle}
+                  label="Collection / Série"
+                  onChange={(e) =>
+                    setForm({ ...form, seriesTitle: e.target.value })
+                  }
+                >
+                  <MenuItem value="">
+                    <em>Aucune collection</em>
+                  </MenuItem>
+                  {allSeries.map((series) => (
+                    <MenuItem key={series.id} value={series.title}>
+                      {series.title}
+                    </MenuItem>
+                  ))}
+                  <MenuItem value="__new__">
+                    <em>+ Créer une nouvelle collection...</em>
+                  </MenuItem>
+                </Select>
+              </FormControl>
+
+              {form.seriesTitle === "__new__" && (
+                <TextField
+                  fullWidth
+                  label="Nom de la nouvelle collection"
+                  placeholder="Entrez le nom de la collection"
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      seriesTitle:
+                        e.target.value === "" ? "__new__" : e.target.value,
+                    })
+                  }
+                  sx={{ mt: 2 }}
+                  autoFocus
+                />
+              )}
             </Grid>
 
             {/* Summary */}
@@ -290,32 +373,22 @@ export default function BookEdit() {
 
             {/* Rating */}
             <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Note (1 à 5)"
-                name="rating"
-                value={form.rating}
-                onChange={handleChange}
-                InputProps={{ inputProps: { min: 1, max: 5, step: 1 } }}
-                disabled={saving}
-                placeholder="1-5"
-              />
-            </Grid>
-
-            {/* Pages */}
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Nombre de pages"
-                name="pages"
-                value={form.pages}
-                onChange={handleChange}
-                InputProps={{ inputProps: { min: 1 } }}
-                disabled={saving}
-                placeholder="Ex: 350"
-              />
+              <Box>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Note
+                </Typography>
+                <Rating
+                  value={form.rating ? parseInt(form.rating) : 0}
+                  onChange={(event, newValue) => {
+                    setForm({
+                      ...form,
+                      rating: newValue ? newValue.toString() : "",
+                    });
+                  }}
+                  size="large"
+                  sx={{ mt: 0.5 }}
+                />
+              </Box>
             </Grid>
 
             {/* Read Date */}
@@ -326,6 +399,20 @@ export default function BookEdit() {
                 label="Date de lecture"
                 name="readDate"
                 value={form.readDate}
+                onChange={handleChange}
+                InputLabelProps={{ shrink: true }}
+                disabled={saving}
+              />
+            </Grid>
+
+            {/* Tome number */}
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                type="int"
+                label="Numéro de Tome"
+                name="tomeNb"
+                value={form.tomeNb}
                 onChange={handleChange}
                 InputLabelProps={{ shrink: true }}
                 disabled={saving}
@@ -358,7 +445,21 @@ export default function BookEdit() {
                 rows={3}
                 disabled={saving}
                 placeholder="Séparez chaque citation par un point-virgule (;)"
-                helperText='Exemple: "La vie est belle; L amour triomphe toujours; Carpe diem"'
+              />
+            </Grid>
+
+            {/* Smut */}
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Chapitre de Smut"
+                name="smut"
+                value={form.smut}
+                onChange={handleChange}
+                multiline
+                rows={3}
+                disabled={saving}
+                placeholder="Séparez chaque chapitre par un point-virgule (;)"
               />
             </Grid>
 

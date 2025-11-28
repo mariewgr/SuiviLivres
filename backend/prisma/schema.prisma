@@ -33,12 +33,13 @@ model Book {
   author    Author   @relation(fields: [authorId], references: [id])
   seriesId  Int?
   series    Series?  @relation(fields: [seriesId], references: [id])
+  tomeNb    Int?
   summary   String?
   coverUrl  String?
   rating    Int?
   readDate  DateTime?
-  pages     Int?
   citations String?  // Store as JSON string or text
+  smut      String?  // Store as JSON string or text
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

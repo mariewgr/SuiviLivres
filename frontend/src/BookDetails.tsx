@@ -11,14 +11,19 @@ import {
   Divider,
   CircularProgress,
   Alert,
-  FormControlLabel,
-  Checkbox,
+  Avatar,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 
 interface Author {
   id: number;
@@ -39,8 +44,8 @@ interface Book {
   coverUrl?: string | null;
   rating?: number | null;
   readDate?: string | null;
-  pages?: number | null;
   citations?: string | null;
+  smut?: string | null;
   isRead?: boolean;
   createdAt: string;
 }
@@ -52,7 +57,12 @@ export default function BookDetail() {
   const navigate = useNavigate();
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [sequels, setSequels] = useState([]);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     fetchBookDetail();
@@ -91,25 +101,178 @@ export default function BookDetail() {
     }
   };
 
-  const handleToggleRead = async () => {
-    if (!book) return;
+  const markAsRead = async () => {
+    setSaving(true);
+
+    const today = new Date().toISOString().split("T")[0];
+
+    const payload = {
+      ...book,
+      seriesTitle: book?.series?.title,
+      isRead: true,
+      readDate: today,
+    };
 
     try {
       const response = await fetch(`${API_URL}/books/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          isRead: !book.isRead,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (response.ok) {
-        const updatedBook = await response.json();
-        setBook(updatedBook);
+      if (!response.ok) throw new Error("Erreur lors de la mise à jour");
+      else fetchBookDetail();
+    } catch (err) {
+      setError("Impossible de marquer comme lu");
+      console.error(err);
+      setSaving(false);
+    }
+  };
+
+  const markAsNotRead = async () => {
+    setSaving(true);
+
+    const payload = {
+      ...book,
+      seriesTitle: book?.series?.title,
+      readDate: null,
+      isRead: false,
+    };
+
+    try {
+      const response = await fetch(`${API_URL}/books/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) throw new Error("Erreur lors de la mise à jour");
+      else fetchBookDetail();
+    } catch (err) {
+      setError("Impossible de marquer comme lu");
+      console.error(err);
+      setSaving(false);
+    }
+  };
+
+  const findSequels = async () => {
+    if (!book) return;
+    setSearching(true);
+
+    try {
+      // Approche 1: Chercher le nom de la série dans le titre ou comme mot-clé général
+      let sequelResults = [];
+
+      // D'abord, essayer de chercher par titre + auteur pour voir si une série existe
+      const searchUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(
+        book.title
+      )}&author=${encodeURIComponent(book.author.name)}&limit=1`;
+
+      const res = await fetch(searchUrl);
+      const data = await res.json();
+
+      let seriesName = null;
+      if (data.docs && data.docs[0] && data.docs[0].series) {
+        seriesName = data.docs[0].series[0];
+        console.log("Série trouvée:", seriesName);
+      }
+
+      if (seriesName) {
+        // Chercher tous les livres qui contiennent le nom de la série
+        // IMPORTANT: Utiliser 'q' au lieu de 'series'
+        const seriesSearchUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(
+          seriesName
+        )}&author=${encodeURIComponent(book.author.name)}&limit=50`;
+
+        const res2 = await fetch(seriesSearchUrl);
+        const data2 = await res2.json();
+        sequelResults = data2.docs || [];
+
+        console.log(`${sequelResults.length} livres trouvés dans la série`);
+      } else {
+        // Plan B: Si pas de série détectée, chercher par auteur
+        // et filtrer manuellement les titres similaires
+        const authorSearchUrl = `https://openlibrary.org/search.json?author=${encodeURIComponent(
+          book.author.name
+        )}&limit=50`;
+
+        const res3 = await fetch(authorSearchUrl);
+        const data3 = await res3.json();
+
+        // Chercher des patterns de suite (tome, volume, book, etc.)
+        const titleBase = book.title
+          .replace(/\s+(tome|volume|book|part|vol\.?)\s*\d+/i, "")
+          .trim();
+
+        sequelResults = data3.docs || [];
+
+        console.log(`${sequelResults.length} livres similaires trouvés`);
+      }
+
+      // Récupérer les livres existants
+      const existing = await fetch(`${API_URL}/books`).then((r) => r.json());
+
+      // Filtrer les doublons
+      const missing = sequelResults.filter((b) => {
+        if (!b.title || !b.author_name[0]) return false;
+        if (
+          b.title.toLowerCase().trim() === book.title.toLowerCase().trim() ||
+          b.author_name[0].toLowerCase() !== book.author.name.toLowerCase()
+        )
+          return false;
+        const titleLower = b.title.toLowerCase();
+
+        // Exclure les livres déjà dans la bibliothèque
+        return !existing.some((e) => e.title.toLowerCase() === titleLower);
+      });
+
+      console.log(`${missing.length} livres potentielles trouvées`);
+      setSequels(missing);
+
+      if (missing.length > 0) {
+        setOpenDialog(true);
+      } else {
+        setError("Aucune suite trouvée pour ce livre");
       }
     } catch (err) {
-      console.error("Error updating read status:", err);
-      alert("Erreur lors de la mise à jour du statut");
+      console.error("Erreur findSequels:", err);
+      setError("Erreur lors de la recherche de suites");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const addBook = async (item) => {
+    const payload = {
+      title: item.title,
+      authorName: book?.author.name,
+      seriesTitle: item.series ? item.series[0] : book?.series?.title,
+      summary: book?.summary,
+      rating: book?.rating ? book.rating : null,
+      readDate: book?.readDate,
+      citations: book?.citations,
+      smut: book?.smut,
+      coverUrl: book?.coverUrl,
+      isRead: book?.isRead,
+    };
+    try {
+      const response = await fetch(`${API_URL}/books`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Échec de la mise à jour du livre");
+      } else {
+        fetchBookDetail();
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Échec de la mise à jour du livre"
+      );
+      setSaving(false);
     }
   };
 
@@ -140,6 +303,7 @@ export default function BookDetail() {
   }
 
   const citations = book.citations ? JSON.parse(book.citations) : [];
+  const smut = book.smut ? JSON.parse(book.smut) : [];
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
@@ -152,6 +316,35 @@ export default function BookDetail() {
         Retour à la liste
       </Button>
 
+      {!book.isRead ? (
+        <Button
+          variant="contained"
+          color="success"
+          onClick={markAsRead}
+          sx={{ mb: 3, ml: 2 }}
+        >
+          ✔️ Marquer comme lu
+        </Button>
+      ) : (
+        <Button
+          variant="contained"
+          color="success"
+          onClick={markAsNotRead}
+          sx={{ mb: 3, ml: 2 }}
+        >
+          Marquer comme non lu
+        </Button>
+      )}
+
+      <Button
+        variant="contained"
+        sx={{ mb: 3, ml: 2 }}
+        onClick={findSequels}
+        disabled={searching}
+      >
+        🔍 {searching ? "Recherche..." : "Trouver les suites"}
+      </Button>
+
       <Paper elevation={3} sx={{ overflow: "hidden" }}>
         <Box
           sx={{
@@ -160,6 +353,50 @@ export default function BookDetail() {
             gap: 3,
           }}
         >
+          {/* Book content unchanged */}
+
+          <Dialog
+            open={openDialog}
+            onClose={() => setOpenDialog(false)}
+            fullWidth
+          >
+            <DialogTitle>Suites trouvées</DialogTitle>
+            <DialogContent>
+              {sequels.length === 0 ? (
+                <Typography>Aucune suite trouvée.</Typography>
+              ) : (
+                <List>
+                  {sequels.map((s, i) => (
+                    <ListItem
+                      key={i}
+                      secondaryAction={
+                        <Button onClick={() => addBook(s)}>Ajouter</Button>
+                      }
+                    >
+                      <ListItemAvatar>
+                        <Avatar>
+                          {s.cover_i ? (
+                            <img
+                              src={`https://covers.openlibrary.org/b/id/${s.cover_i}-S.jpg`}
+                              alt=""
+                            />
+                          ) : (
+                            "📘"
+                          )}
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText primary={s.title} />
+                      <ListItemText secondary={s.author_name} />
+                      {/* <ListItemText secondary={s.series[0]} /> */}
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setOpenDialog(false)}>Fermer</Button>
+            </DialogActions>
+          </Dialog>
           {/* Book Cover */}
           <Box
             sx={{
@@ -205,43 +442,27 @@ export default function BookDetail() {
                 {book.title}
               </Typography>
 
-              {/* READ/UNREAD CHECKBOX - THIS IS THE CHECKBOX */}
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={book.isRead || false}
-                    onChange={handleToggleRead}
-                    icon={<RadioButtonUncheckedIcon />}
-                    checkedIcon={<CheckCircleIcon />}
-                    color="success"
-                    sx={{ "& .MuiSvgIcon-root": { fontSize: 28 } }}
-                  />
-                }
-                label={
-                  <Typography
-                    variant="h6"
-                    fontWeight="bold"
-                    color={book.isRead ? "success.main" : "text.secondary"}
-                  >
-                    {book.isRead ? "✓ Lu" : "Non lu"}
-                  </Typography>
-                }
-                sx={{ mb: 2 }}
-              />
-            </Box>
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                {book.author.name}
+              </Typography>
 
-            <Typography variant="h6" color="text.secondary" gutterBottom>
-              par {book.author?.name}
-            </Typography>
+              <Typography
+                variant="h6"
+                fontWeight="bold"
+                color={book.isRead ? "success.main" : "text.secondary"}
+              >
+                {book.isRead ? "✓ Lu" : "Non lu"}
+              </Typography>
+            </Box>
 
             {book.series && (
               <Chip
-                label={`Série: ${book.series.title}`}
+                label={`Série: ${book.series?.title}`}
                 color="primary"
                 variant="outlined"
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(`/series/${book.series!.id}`);
+                  navigate(`/series/${book.series?.id}`);
                 }}
                 sx={{
                   mb: 2,
@@ -254,32 +475,8 @@ export default function BookDetail() {
               />
             )}
 
-            {/* Rating */}
-            {book.rating && (
-              <Box sx={{ mb: 2 }}>
-                <Rating value={book.rating} readOnly size="large" />
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ mt: 0.5 }}
-                >
-                  {book.rating}/5
-                </Typography>
-              </Box>
-            )}
-
             {/* Meta Information */}
             <Box sx={{ display: "flex", gap: 4, mb: 3, flexWrap: "wrap" }}>
-              {book.pages && (
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Pages
-                  </Typography>
-                  <Typography variant="body1" fontWeight="medium">
-                    {book.pages}
-                  </Typography>
-                </Box>
-              )}
               {book.readDate && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
@@ -347,6 +544,37 @@ export default function BookDetail() {
                 sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}
               >
                 {citations.map((citation: string, index: number) => (
+                  <Paper
+                    key={index}
+                    elevation={0}
+                    sx={{
+                      p: 2,
+                      backgroundColor: "grey.50",
+                      borderLeft: 4,
+                      borderColor: "primary.main",
+                    }}
+                  >
+                    <Typography variant="body1" fontStyle="italic">
+                      "{citation}"
+                    </Typography>
+                  </Paper>
+                ))}
+              </Box>
+            </Box>
+          </>
+        )}
+        {/* Smut Section */}
+        {smut.length > 0 && (
+          <>
+            <Divider />
+            <Box sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom fontWeight="bold">
+                Chapitre de Smut
+              </Typography>
+              <Box
+                sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}
+              >
+                {smut.map((citation: string, index: number) => (
                   <Paper
                     key={index}
                     elevation={0}

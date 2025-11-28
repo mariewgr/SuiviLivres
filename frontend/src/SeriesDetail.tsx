@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+
 import {
   Container,
   Paper,
@@ -24,11 +26,13 @@ import {
   ListItemButton,
   IconButton,
   Checkbox,
+  TextField,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import MenuBookIcon from "@mui/icons-material/MenuBook";
-import AddIcon from "@mui/icons-material/Add";
+import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
+import AddIcon from "@mui/icons-material/Add";
+import MenuBookIcon from "@mui/icons-material/MenuBook";
 
 interface Author {
   id: number;
@@ -44,6 +48,10 @@ interface Book {
   rating?: number | null;
   readDate?: string | null;
   pages?: number | null;
+  tomeNb?: number | null;
+  citations?: string | null;
+  smut?: string | null;
+  isRead?: boolean;
 }
 
 interface Series {
@@ -61,6 +69,11 @@ export default function SeriesDetail() {
   const [series, setSeries] = useState<Series | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [availableBooks, setAvailableBooks] = useState<Book[]>([]);
   const [selectedBooks, setSelectedBooks] = useState<number[]>([]);
@@ -107,6 +120,52 @@ export default function SeriesDetail() {
       console.error("Error fetching books:", err);
     } finally {
       setLoadingBooks(false);
+    }
+  };
+  const fetchSeries = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${API_URL}/series/${id}`);
+      const data = await res.json();
+      setSeries(data);
+      setNewTitle(data.title);
+    } catch (e) {
+      setError("Impossible de charger la collection");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ---- RENAME COLLECTION ----
+  const renameSeries = async () => {
+    try {
+      const res = await fetch(`${API_URL}/series/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle.trim() }),
+      });
+
+      if (!res.ok) throw new Error();
+
+      setEditOpen(false);
+      fetchSeries();
+    } catch {
+      alert("Erreur lors du renommage");
+    }
+  };
+
+  // ---- DELETE COLLECTION ----
+  const deleteSeries = async () => {
+    try {
+      const res = await fetch(`${API_URL}/series/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error();
+
+      navigate("/");
+    } catch {
+      alert("Erreur lors de la suppression de la collection");
     }
   };
 
@@ -171,6 +230,29 @@ export default function SeriesDetail() {
     }
   };
 
+  const onDragEnd = async (result) => {
+    if (!result.destination) return;
+
+    const items = Array.from(series?.books).sort(
+      (a, b) => (a.tomeNb || 999) - (b.tomeNb || 999)
+    );
+    const [moved] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, moved);
+
+    // Recompute tome numbers
+    const updated = items.map((b, i) => ({ ...b, tomeNb: i + 1 }));
+
+    setSeries({ ...series, books: updated });
+
+    // Send updates to backend
+    for (const b of updated) {
+      await fetch(`${API_URL}/books/${b.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...b, seriesTitle: series?.title }),
+      });
+    }
+  };
   if (loading) {
     return (
       <Container maxWidth="lg" sx={{ py: 8, textAlign: "center" }}>
@@ -179,6 +261,13 @@ export default function SeriesDetail() {
       </Container>
     );
   }
+
+  if (!series)
+    return (
+      <Container sx={{ py: 5 }}>
+        <Alert severity="error">Collection introuvable</Alert>
+      </Container>
+    );
 
   if (error || !series) {
     return (
@@ -202,11 +291,6 @@ export default function SeriesDetail() {
       ? series.books.reduce((sum, book) => sum + (book.rating || 0), 0) /
         series.books.filter((b) => b.rating).length
       : 0;
-
-  const totalPages = series.books.reduce(
-    (sum, book) => sum + (book.pages || 0),
-    0
-  );
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -237,6 +321,14 @@ export default function SeriesDetail() {
               <Typography variant="h3" component="h1" fontWeight="bold">
                 {series.title}
               </Typography>
+              <Box sx={{ display: "flex", gap: 2 }}>
+                <IconButton onClick={() => setEditOpen(true)}>
+                  <EditIcon />
+                </IconButton>
+                <IconButton color="error" onClick={() => setDeleteOpen(true)}>
+                  <DeleteIcon />
+                </IconButton>
+              </Box>
               <Typography variant="subtitle1" color="text.secondary">
                 Collection de {series.books.length} livre
                 {series.books.length > 1 ? "s" : ""}
@@ -294,25 +386,6 @@ export default function SeriesDetail() {
               </Box>
             </Grid>
           )}
-          {totalPages > 0 && (
-            <Grid item xs={12} sm={4}>
-              <Box
-                sx={{
-                  textAlign: "center",
-                  p: 2,
-                  backgroundColor: "grey.50",
-                  borderRadius: 2,
-                }}
-              >
-                <Typography variant="h4" color="primary" fontWeight="bold">
-                  {totalPages}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Pages au total
-                </Typography>
-              </Box>
-            </Grid>
-          )}
         </Grid>
       </Paper>
 
@@ -336,146 +409,198 @@ export default function SeriesDetail() {
           </Button>
         </Paper>
       ) : (
-        <Grid container spacing={3}>
-          {series.books.map((book, index) => (
-            <Grid item xs={12} sm={6} md={4} key={book.id}>
-              <Card
-                sx={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  position: "relative",
-                  transition: "all 0.3s ease",
-                  "&:hover": {
-                    boxShadow: 6,
-                  },
-                }}
+        <DragDropContext onDragEnd={onDragEnd}>
+          <Droppable droppableId="series-books" direction="vertical">
+            {(provided) => (
+              <Grid
+                container
+                spacing={3}
+                sx={{ mt: 3 }}
+                {...provided.droppableProps}
+                ref={provided.innerRef}
               >
-                {/* Remove Button */}
-                <IconButton
-                  sx={{
-                    position: "absolute",
-                    top: 8,
-                    right: 8,
-                    backgroundColor: "rgba(255, 255, 255, 0.95)",
-                    boxShadow: 2,
-                    "&:hover": {
-                      backgroundColor: "error.main",
-                      color: "white",
-                    },
-                    zIndex: 2,
-                  }}
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRemoveBook(book.id, book.title);
-                  }}
-                  title="Retirer de la collection"
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-
-                {/* Book Cover */}
-                <Box
-                  sx={{
-                    position: "relative",
-                    cursor: "pointer",
-                    "&:hover": {
-                      opacity: 0.9,
-                    },
-                  }}
-                  onClick={() => navigate(`/book/${book.id}`)}
-                >
-                  {book.coverUrl ? (
-                    <CardMedia
-                      component="img"
-                      height="300"
-                      image={book.coverUrl}
-                      alt={book.title}
-                      sx={{ objectFit: "cover" }}
-                    />
-                  ) : (
-                    <Box
-                      sx={{
-                        height: 300,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: "grey.200",
-                      }}
+                {series.books
+                  .sort((a, b) => {
+                    // Si les deux ont un tomeNB, comparer les numéros
+                    if (a.tomeNb && b.tomeNb) {
+                      return a.tomeNb - b.tomeNb;
+                    }
+                    // Si seulement a a un tomeNB, il vient en premier
+                    if (a.tomeNb) return -1;
+                    // Si seulement b a un tomeNB, il vient en premier
+                    if (b.tomeNb) return 1;
+                    // Si aucun n'a de tomeNB, garder l'ordre actuel
+                    return 0;
+                  })
+                  .map((book, index) => (
+                    <Draggable
+                      key={book.id}
+                      draggableId={book.id.toString()}
+                      index={index}
                     >
-                      <Typography fontSize={60}>📚</Typography>
-                    </Box>
-                  )}
-                  {/* Book Number Badge */}
-                  <Chip
-                    label={`#${index + 1}`}
-                    color="primary"
-                    size="small"
-                    sx={{
-                      position: "absolute",
-                      top: 8,
-                      left: 8,
-                      fontWeight: "bold",
-                    }}
-                  />
-                </Box>
+                      {(providedDrag) => (
+                        <Grid
+                          item
+                          xs={12}
+                          sm={6}
+                          md={4}
+                          ref={providedDrag.innerRef}
+                          {...providedDrag.draggableProps}
+                          {...providedDrag.dragHandleProps}
+                        >
+                          <Card
+                            sx={{
+                              height: "100%",
+                              display: "flex",
+                              flexDirection: "column",
+                              position: "relative",
+                              transition: "all 0.3s ease",
+                              "&:hover": {
+                                boxShadow: 6,
+                              },
+                            }}
+                          >
+                            {/* Remove Button */}
+                            <IconButton
+                              sx={{
+                                position: "absolute",
+                                top: 8,
+                                right: 8,
+                                backgroundColor: "rgba(255, 255, 255, 0.95)",
+                                boxShadow: 2,
+                                "&:hover": {
+                                  backgroundColor: "error.main",
+                                  color: "white",
+                                },
+                                zIndex: 2,
+                              }}
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveBook(book.id, book.title);
+                              }}
+                              title="Retirer de la collection"
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
 
-                {/* Book Info */}
-                <CardContent
-                  sx={{
-                    flexGrow: 1,
-                    cursor: "pointer",
-                    "&:hover": {
-                      backgroundColor: "action.hover",
-                    },
-                  }}
-                  onClick={() => navigate(`/book/${book.id}`)}
-                >
-                  <Typography variant="h6" gutterBottom fontWeight="bold">
-                    {book.title}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    gutterBottom
-                  >
-                    par {book.author.name}
-                  </Typography>
+                            {/* Book Cover */}
+                            <Box
+                              sx={{
+                                position: "relative",
+                                cursor: "pointer",
+                                "&:hover": {
+                                  opacity: 0.9,
+                                },
+                              }}
+                              onClick={() => navigate(`/book/${book.id}`)}
+                            >
+                              {book.coverUrl ? (
+                                <CardMedia
+                                  component="img"
+                                  height="300"
+                                  image={book.coverUrl}
+                                  alt={book.title}
+                                  sx={{ objectFit: "cover" }}
+                                />
+                              ) : (
+                                <Box
+                                  sx={{
+                                    height: 300,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    backgroundColor: "grey.200",
+                                  }}
+                                >
+                                  <Typography fontSize={60}>📚</Typography>
+                                </Box>
+                              )}
+                              {/* Book Number Badge */}
+                              <Chip
+                                label={`#${index + 1}`}
+                                color="primary"
+                                size="small"
+                                sx={{
+                                  position: "absolute",
+                                  top: 8,
+                                  left: 8,
+                                  fontWeight: "bold",
+                                }}
+                              />
+                            </Box>
 
-                  {book.rating && (
-                    <Box sx={{ mt: 1 }}>
-                      <Rating value={book.rating} readOnly size="small" />
-                    </Box>
-                  )}
+                            {/* Book Info */}
+                            <CardContent
+                              sx={{
+                                flexGrow: 1,
+                                cursor: "pointer",
+                                "&:hover": {
+                                  backgroundColor: "action.hover",
+                                },
+                              }}
+                              onClick={() => navigate(`/book/${book.id}`)}
+                            >
+                              <Typography
+                                variant="h6"
+                                gutterBottom
+                                fontWeight="bold"
+                              >
+                                {book.title}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                gutterBottom
+                              >
+                                par {book.author.name}
+                              </Typography>
 
-                  {book.pages && (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ mt: 1, display: "block" }}
-                    >
-                      {book.pages} pages
-                    </Typography>
-                  )}
+                              {book.rating && (
+                                <Box sx={{ mt: 1 }}>
+                                  <Rating
+                                    value={book.rating}
+                                    readOnly
+                                    size="small"
+                                  />
+                                </Box>
+                              )}
 
-                  {book.readDate && (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ display: "block" }}
-                    >
-                      Lu le{" "}
-                      {new Date(book.readDate).toLocaleDateString("fr-FR")}
-                    </Typography>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+                              {book.pages && (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  sx={{ mt: 1, display: "block" }}
+                                >
+                                  {book.pages} pages
+                                </Typography>
+                              )}
+
+                              {book.readDate && (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  sx={{ display: "block" }}
+                                >
+                                  Lu le{" "}
+                                  {new Date(book.readDate).toLocaleDateString(
+                                    "fr-FR"
+                                  )}
+                                </Typography>
+                              )}
+                            </CardContent>
+                          </Card>
+                        </Grid>
+                      )}
+                    </Draggable>
+                  ))}
+
+                {provided.placeholder}
+              </Grid>
+            )}
+          </Droppable>
+        </DragDropContext>
       )}
-
       {/* Add Books Dialog */}
       <Dialog
         open={addDialogOpen}
@@ -572,6 +697,44 @@ export default function SeriesDetail() {
             startIcon={<AddIcon />}
           >
             Ajouter {selectedBooks.length > 0 && `(${selectedBooks.length})`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* --- EDIT SERIES DIALOG --- */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)}>
+        <DialogTitle>Renommer la collection</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            margin="dense"
+            label="Nouveau nom"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)}>Annuler</Button>
+          <Button variant="contained" onClick={renameSeries}>
+            Renommer
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* --- DELETE SERIES DIALOG --- */}
+      <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>
+        <DialogTitle>Supprimer la collection ?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Tous les livres garderont leurs données mais seront retirés de la
+            collection.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteOpen(false)}>Annuler</Button>
+          <Button color="error" variant="contained" onClick={deleteSeries}>
+            Supprimer
           </Button>
         </DialogActions>
       </Dialog>
