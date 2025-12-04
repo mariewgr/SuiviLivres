@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import BookDetail from "./BookDetails";
 import BookEdit from "./BookEdit";
 import SeriesDetail from "./SeriesDetail";
+
 import {
   Container,
   Typography,
@@ -35,10 +36,12 @@ import {
   Select,
   MenuItem,
 } from "@mui/material";
+
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import AddIcon from "@mui/icons-material/Add";
+import ChronologicalTab from "./ChronologocalTab";
 
 interface Author {
   id: number;
@@ -96,6 +99,7 @@ function BookList() {
   const [books, setBooks] = useState<Book[]>([]);
   const [series, setSeries] = useState<SeriesWithCount[]>([]);
   const [currentTab, setCurrentTab] = useState(0);
+
   const [form, setForm] = useState({
     title: "",
     authorName: "",
@@ -110,14 +114,21 @@ function BookList() {
   const [pendingBook, setPendingBook] = useState<PendingBook | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
 
-  // Search functionality
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchBook, setSearchBook] = useState("");
+  const [searchCollection, setSearchCollection] = useState("");
+
   const [searchResults, setSearchResults] = useState<OpenLibraryBook[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedBooksToRead, setSelectedBooksToRead] = useState<Book[]>([]);
+  const [availableBooks, setAvailableBooks] = useState<Book[]>([]);
+  const [availableCollections, setAvailableCollections] = useState<
+    SeriesWithCount[]
+  >([]);
+  const [loadingBooks, setLoadingBooks] = useState(false);
+  const [loadingCollections, setLoadingCollections] = useState(false);
 
-  // Create collection functionality
   const [createCollectionOpen, setCreateCollectionOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");
   const [selectedBooksForCollection, setSelectedBooksForCollection] = useState<
@@ -129,62 +140,59 @@ function BookList() {
     fetchSeries();
   }, []);
 
-  const fetchBooks = async () => {
+  const fetchAvailableBooks = async () => {
     try {
+      setLoadingBooks(true);
       const res = await fetch(`${API_URL}/books`);
-      const data = await res.json();
-      setBooks(data);
-    } catch (err) {
-      console.error("Erreur fetchBooks:", err);
+      const allBooks = await res.json();
+
+      const filtered =
+        searchBook == ""
+          ? allBooks
+          : allBooks.filter((b: Book) => {
+              const q = searchBook.toLowerCase();
+              return (
+                b.title.toLowerCase().includes(q) ||
+                b.author.name.toLowerCase().includes(q)
+              );
+            });
+
+      setAvailableBooks(filtered);
+    } finally {
+      setLoadingBooks(false);
     }
+  };
+
+  const fetchAvailableCollections = async () => {
+    try {
+      setLoadingCollections(true);
+      const res = await fetch(`${API_URL}/series`);
+      const allSeries = await res.json();
+
+      const filtered =
+        searchCollection == ""
+          ? allSeries
+          : allSeries.filter((b: SeriesWithCount) => {
+              const q = searchCollection.toLowerCase();
+              return b.title.toLowerCase().includes(q);
+            });
+
+      setAvailableCollections(filtered);
+    } finally {
+      setLoadingCollections(false);
+    }
+  };
+
+  const fetchBooks = async () => {
+    const res = await fetch(`${API_URL}/books`);
+    setBooks(await res.json());
   };
 
   const fetchSeries = async () => {
-    try {
-      const res = await fetch(`${API_URL}/series`);
-      const data = await res.json();
-      setSeries(data);
-    } catch (err) {
-      console.error("Erreur fetchSeries:", err);
-    }
-  };
-
-  // --- TOGGLE SELECTION ---
-  const handleToggleSelectToRead = (book) => {
-    setSelectedBooksToRead((prev) =>
-      prev.includes(book)
-        ? prev.filter((b) => b.id !== book.id)
-        : [...prev, book]
-    );
-  };
-
-  // --- MARK SELECTED BOOKS AS READ ---
-  const handleMarkSelectedAsRead = async () => {
-    try {
-      await Promise.all(
-        selectedBooksToRead.map((b) =>
-          fetch(`${API_URL}/books/${b.id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...b,
-              seriesTitle: b.series?.title,
-              isRead: true,
-              readDate: new Date(),
-            }),
-          })
-        )
-      );
-
-      setSelectedBooksToRead([]);
-      fetchBooks();
-    } catch (err) {
-      console.error("Erreur mark-as-read:", err);
-      alert("Impossible de marquer comme lu");
-    }
-  };
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const res = await fetch(`${API_URL}/series`);
+    const series = await res.json();
+    setSeries(series);
+    setAvailableCollections(series);
   };
 
   const handleSearchBooks = async () => {
@@ -199,9 +207,6 @@ function BookList() {
       );
       const data = await response.json();
       setSearchResults(data.docs || []);
-    } catch (error) {
-      console.error("Error searching books:", error);
-      alert("Erreur lors de la recherche de livres");
     } finally {
       setSearching(false);
     }
@@ -223,10 +228,7 @@ function BookList() {
       tomeNb: -1,
     });
 
-    // Store cover URL separately if needed
-    if (coverUrl) {
-      (form as any).coverUrl = coverUrl;
-    }
+    (form as any).coverUrl = coverUrl;
 
     setSearchDialogOpen(false);
     setSearchQuery("");
@@ -235,8 +237,10 @@ function BookList() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newCollectionName != "" && form.seriesTitle === "__new__")
+
+    if (newCollectionName !== "" && form.seriesTitle === "__new__") {
       form.seriesTitle = newCollectionName;
+    }
 
     const payload = {
       ...form,
@@ -245,529 +249,577 @@ function BookList() {
       smut: form.smut ? form.smut.split(";") : [],
     };
 
-    try {
-      const res = await fetch(`${API_URL}/books`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data: PendingBook = await res.json();
+    const res = await fetch(`${API_URL}/books`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-      if (data.coverUrl || data.nextSeriesTitle) {
-        setPendingBook(data);
-        setOpenDialog(true);
-      } else {
-        fetchBooks();
-        fetchSeries();
-      }
+    const data = await res.json();
 
-      setForm({
-        title: "",
-        authorName: "",
-        seriesTitle: "",
-        summary: "",
-        rating: "",
-        citations: "",
-        smut: "",
-        tomeNb: -1,
-      });
-    } catch (err) {
-      console.error("Erreur addBook:", err);
+    if (data.coverUrl || data.nextSeriesTitle) {
+      setPendingBook(data);
+      setOpenDialog(true);
+    } else {
+      fetchBooks();
+      fetchSeries();
     }
-    setCreateCollectionOpen(false);
+
+    setForm({
+      title: "",
+      authorName: "",
+      seriesTitle: "",
+      summary: "",
+      rating: "",
+      citations: "",
+      smut: "",
+      tomeNb: -1,
+    });
+
     setNewCollectionName("");
   };
 
-  const handleBookClick = (bookId: number) => {
-    navigate(`/book/${bookId}`);
-  };
-
-  const handleToggleBookForCollection = (bookId: number) => {
+  const handleToggleBookForCollection = (id: number) => {
     setSelectedBooksForCollection((prev) =>
-      prev.includes(bookId)
-        ? prev.filter((id) => id !== bookId)
-        : [...prev, bookId]
+      prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id]
     );
   };
 
   const handleCreateCollection = async () => {
     if (!newCollectionName.trim()) {
-      alert("Veuillez entrer un nom pour la collection");
+      alert("Veuillez entrer un nom.");
       return;
     }
 
-    try {
-      // Update each selected book to add it to the new series
-      await Promise.all(
-        selectedBooksForCollection.map((bookId) =>
-          fetch(`${API_URL}/books/${bookId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              seriesTitle: newCollectionName.trim(),
-            }),
-          })
-        )
-      );
+    await Promise.all(
+      selectedBooksForCollection.map((bookId) =>
+        fetch(`${API_URL}/books/${bookId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            seriesTitle: newCollectionName.trim(),
+          }),
+        })
+      )
+    );
 
-      // Refresh data
-      await fetchBooks();
-      await fetchSeries();
+    fetchBooks();
+    fetchSeries();
+    setCreateCollectionOpen(false);
+    setSelectedBooksForCollection([]);
+  };
 
-      // Reset and close
-      setCreateCollectionOpen(false);
-      setNewCollectionName("");
-      setSelectedBooksForCollection([]);
-    } catch (err) {
-      console.error("Error creating collection:", err);
-      alert("Erreur lors de la création de la collection");
-    }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleBookClick = (id: number) => {
+    navigate(`/book/${id}`);
   };
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      <Typography variant="h3" gutterBottom>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Typography variant="h3" sx={{ mb: 3, fontWeight: "bold" }}>
         📚 Suivi de Livres
       </Typography>
 
-      {/* Tabs for Books and Collections */}
-      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
-        <Tabs
-          value={currentTab}
-          onChange={(e, newValue) => setCurrentTab(newValue)}
-        >
-          <Tab label={`Livres (${books.length})`} />
+      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 4 }}>
+        <Tabs value={currentTab} onChange={(e, v) => setCurrentTab(v)}>
+          <Tab label={`Livres`} />
           <Tab
             label={
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                 Collections
-                <Badge badgeContent={series.length} color="primary" />
+              </Box>
+            }
+          />
+          <Tab
+            label={
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                Chronologie
               </Box>
             }
           />
         </Tabs>
       </Box>
 
-      {/* Tab Content */}
-      {currentTab === 0 ? (
-        <>
-          {/* Formulaire */}
-          <Paper sx={{ p: 3, mb: 4 }} elevation={3}>
-            {/* Header with Search Button */}
-            <Box
+      {/* ---------------------------------------------------------------- */}
+      {/* ----------------------------- TAB LIVRES ----------------------- */}
+      {/* ---------------------------------------------------------------- */}
+
+      {currentTab === 0 && (
+        <Grid container spacing={4} sx={{ mt: 1 }}>
+          {/* ------------------------------------------------------------ */}
+          {/*                       FORMULAIRE GAUCHE                      */}
+          {/* ------------------------------------------------------------ */}
+
+          <Grid item xs={12} md={4}>
+            <Paper
+              elevation={4}
               sx={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                mb: 3,
+                p: 4,
+                borderRadius: 4,
+                backdropFilter: "blur(6px)",
+                background: "rgba(255,255,255,0.7)",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
               }}
             >
-              <Typography variant="h6" fontWeight="bold">
-                Ajouter un livre
+              <Typography variant="h5" fontWeight="bold" sx={{ mb: 3 }}>
+                ✨ Ajouter un nouveau livre
               </Typography>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<SearchIcon />}
-                onClick={() => setSearchDialogOpen(true)}
-                size="large"
-              >
-                Rechercher en ligne
-              </Button>
-            </Box>
 
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Titre"
-                  name="title"
-                  value={form.title}
-                  onChange={handleChange}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  required
-                  label="Auteur"
-                  name="authorName"
-                  value={form.authorName}
-                  onChange={handleChange}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <FormControl fullWidth>
-                  <InputLabel id="series-select-label">
-                    Collection / Série (optionnel)
-                  </InputLabel>
-                  <Select
-                    labelId="series-select-label"
-                    value={form.seriesTitle}
-                    label="Collection / Série (optionnel)"
-                    onChange={(e) =>
-                      setForm({ ...form, seriesTitle: e.target.value })
-                    }
-                  >
-                    <MenuItem value="">
-                      <em>Aucune collection</em>
-                    </MenuItem>
-                    {series.map((s) => (
-                      <MenuItem key={s.id} value={s.title}>
-                        {s.title} ({s.books?.length || 0} livre
-                        {(s.books?.length || 0) > 1 ? "s" : ""})
-                      </MenuItem>
-                    ))}
-                    <MenuItem value="__new__">
-                      <em>+ Créer une nouvelle collection...</em>
-                    </MenuItem>
-                  </Select>
-                </FormControl>
-
-                {form.seriesTitle === "__new__" && (
-                  <TextField
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Button
                     fullWidth
-                    label="Nom de la nouvelle collection"
-                    onChange={(e) => setNewCollectionName(e.target.value)}
-                    value={newCollectionName}
-                    sx={{ mt: 2 }}
-                    autoFocus
-                  />
-                )}
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Résumé"
-                  name="summary"
-                  value={form.summary}
-                  onChange={handleChange}
-                  multiline
-                  rows={3}
-                />
-              </Grid>
-              <Grid container xs={10} spacing={2}>
-                <Grid item xs={12} sm={5}>
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      gutterBottom
-                    >
-                      Note
-                    </Typography>
-                    <Rating
-                      value={form.rating ? parseInt(form.rating) : 0}
-                      onChange={(event, newValue) => {
-                        setForm({
-                          ...form,
-                          rating: newValue ? newValue.toString() : "",
-                        });
-                      }}
-                      size="large"
-                      sx={{ mt: 0.5 }}
-                    />
-                  </Box>
+                    variant="outlined"
+                    startIcon={<SearchIcon />}
+                    onClick={() => setSearchDialogOpen(true)}
+                    sx={{
+                      py: 1.2,
+                      borderRadius: 3,
+                      textTransform: "none",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Rechercher en ligne
+                  </Button>
                 </Grid>
+
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label="Numéro du Tome"
+                    label="Titre"
+                    name="title"
+                    value={form.title}
+                    onChange={handleChange}
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
+                  />
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Auteur"
+                    name="authorName"
+                    value={form.authorName}
+                    onChange={handleChange}
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <FormControl fullWidth>
+                    <InputLabel>Série (optionnel)</InputLabel>
+                    <Select
+                      value={form.seriesTitle}
+                      label="Série (optionnel)"
+                      onChange={(e) =>
+                        setForm({ ...form, seriesTitle: e.target.value })
+                      }
+                      sx={{ borderRadius: 3 }}
+                    >
+                      <MenuItem value="">
+                        <em>Aucune série</em>
+                      </MenuItem>
+
+                      {series.map((s) => (
+                        <MenuItem key={s.id} value={s.title}>
+                          {s.title} ({s.books.length} livres)
+                        </MenuItem>
+                      ))}
+
+                      <MenuItem value="__new__">
+                        <em>+ Nouvelle série…</em>
+                      </MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  {form.seriesTitle === "__new__" && (
+                    <TextField
+                      fullWidth
+                      label="Nom de la nouvelle série"
+                      value={newCollectionName}
+                      onChange={(e) => setNewCollectionName(e.target.value)}
+                      sx={{
+                        mt: 2,
+                        "& .MuiOutlinedInput-root": { borderRadius: 3 },
+                      }}
+                    />
+                  )}
+                </Grid>
+
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Résumé"
+                    name="summary"
+                    value={form.summary}
+                    multiline
+                    rows={3}
+                    onChange={handleChange}
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
+                  />
+                </Grid>
+
+                <Grid item xs={6}>
+                  <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+                    Note
+                  </Typography>
+                  <Rating
+                    value={form.rating ? parseInt(form.rating) : 0}
+                    onChange={(e, v) =>
+                      setForm({ ...form, rating: v ? v.toString() : "" })
+                    }
+                  />
+                </Grid>
+
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    label="Numéro du tome"
                     name="tomeNb"
                     value={form.tomeNb}
                     onChange={handleChange}
-                    multiline
-                    rows={1}
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                   />
                 </Grid>
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Citations (séparées par ;)"
-                  name="citations"
-                  value={form.citations}
-                  onChange={handleChange}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Chapitre de Smut (séparées par ;)"
-                  name="smut"
-                  value={form.smut}
-                  onChange={handleChange}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleSubmit}
-                >
-                  Ajouter le livre
-                </Button>
-              </Grid>
-            </Grid>
-          </Paper>
 
-          {/* Liste des livres */}
-          <Typography variant="h4" gutterBottom>
-            📖 Liste des livres
-          </Typography>
-          <Button
-            variant="contained"
-            color="success"
-            disabled={selectedBooksToRead.length === 0}
-            onClick={handleMarkSelectedAsRead}
-            sx={{ mb: 2 }}
-          >
-            Marquer comme lu ({selectedBooksToRead.length})
-          </Button>
-          <List>
-            {books.map(
-              (b) =>
-                !b.isRead && (
-                  <ListItem disablePadding>
-                    <ListItemButton
-                      onClick={() => handleToggleSelectToRead(b)}
-                      sx={{ alignItems: "flex-start" }}
-                    >
-                      <Checkbox
-                        checked={selectedBooksToRead.includes(b)}
-                        tabIndex={-1}
-                        disableRipple
-                        sx={{ mt: 1 }}
-                      />
-                      <Paper
-                        key={b.id}
-                        sx={{
-                          mb: 2,
-                          p: 2,
-                          display: "flex",
-                          gap: 2,
-                          cursor: "pointer",
-                          transition: "all 0.3s ease",
-                          "&:hover": {
-                            transform: "translateY(-2px)",
-                            boxShadow: 6,
-                            backgroundColor: "action.hover",
-                          },
-                        }}
-                        elevation={2}
-                        onClick={() => handleBookClick(b.id)}
-                      >
-                        {b.coverUrl && (
-                          <Box
-                            component="img"
-                            src={b.coverUrl}
-                            alt={b.title}
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Citations (séparées par ; )"
+                    name="citations"
+                    value={form.citations}
+                    onChange={handleChange}
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Chapitres Smut (séparés par ; )"
+                    name="smut"
+                    value={form.smut}
+                    onChange={handleChange}
+                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    color="primary"
+                    onClick={handleSubmit}
+                    sx={{
+                      py: 1.4,
+                      borderRadius: 3,
+                      fontWeight: "bold",
+                      fontSize: "1rem",
+                    }}
+                  >
+                    Ajouter le livre
+                  </Button>
+                </Grid>
+              </Grid>
+            </Paper>
+          </Grid>
+          {/* ------------------------------------------------------------ */}
+          {/*                     TROISIÈME COLONNE : NON LUS             */}
+          {/* ------------------------------------------------------------ */}
+
+          <Grid item xs={12} md={4}>
+            <Paper
+              elevation={3}
+              sx={{
+                p: 3,
+                borderRadius: 4,
+                height: "100%",
+                maxHeight: "85vh",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
+                📖 Livres non lus
+              </Typography>
+
+              <Box sx={{ overflowY: "auto", pr: 1 }}>
+                {books.filter((b) => !b.isRead).length === 0 ? (
+                  <Typography
+                    color="text.secondary"
+                    sx={{ mt: 3, textAlign: "center" }}
+                  >
+                    Aucun livre non lu 🎉
+                  </Typography>
+                ) : (
+                  <List>
+                    {books
+                      .filter((b) => !b.isRead)
+                      .map((b) => (
+                        <ListItem key={b.id} disablePadding>
+                          <ListItemButton
                             sx={{
-                              width: 100,
-                              height: 140,
-                              objectFit: "cover",
-                              borderRadius: 1,
+                              p: 2,
+                              borderRadius: 3,
+                              mb: 2,
+                              transition: "0.3s",
+                              "&:hover": {
+                                backgroundColor: "rgba(0,0,0,0.04)",
+                                transform: "translateY(-2px)",
+                              },
                             }}
-                          />
-                        )}
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                            {b.title}
-                          </Typography>
-                          <Typography
-                            variant="subtitle2"
-                            color="text.secondary"
+                            onClick={() => navigate(`/book/${b.id}`)}
                           >
-                            {b.author?.name}
-                          </Typography>
-                          {b.rating && (
-                            <Box sx={{ mt: 1 }}>
-                              <Rating value={b.rating} readOnly size="small" />
+                            <Box sx={{ display: "flex", gap: 2 }}>
+                              {b.coverUrl ? (
+                                <Box
+                                  component="img"
+                                  src={b.coverUrl}
+                                  alt={b.title}
+                                  sx={{
+                                    width: 60,
+                                    height: 85,
+                                    borderRadius: 2,
+                                    objectFit: "cover",
+                                  }}
+                                />
+                              ) : (
+                                <Box
+                                  sx={{
+                                    width: 60,
+                                    height: 85,
+                                    borderRadius: 2,
+                                    backgroundColor: "grey.300",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                >
+                                  📘
+                                </Box>
+                              )}
+
+                              <Box>
+                                <Typography fontWeight="bold">
+                                  {b.title}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  color="text.secondary"
+                                >
+                                  {b.author.name}
+                                </Typography>
+                              </Box>
                             </Box>
-                          )}
-                          {b.series && (
-                            <Chip
-                              label={`Série: ${b.series.title}`}
-                              color="primary"
-                              variant="outlined"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/series/${b.series?.id}`);
-                              }}
-                              sx={{
-                                mb: 2,
-                                cursor: "pointer",
-                                "&:hover": {
-                                  backgroundColor: "primary.light",
-                                  color: "white",
-                                },
-                              }}
-                            />
-                          )}
-                          {b.summary && (
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                mt: 1,
-                                display: "-webkit-box",
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {b.summary}
-                            </Typography>
-                          )}
-                        </Box>
-                      </Paper>
-                    </ListItemButton>
-                  </ListItem>
-                )
-            )}
-          </List>
-        </>
-      ) : (
-        /* Collections Tab */
+                          </ListItemButton>
+                        </ListItem>
+                      ))}
+                  </List>
+                )}
+              </Box>
+            </Paper>
+          </Grid>
+
+          {/* ------------------------------------------------------------ */}
+          {/*                        LISTE DE DROITE                      */}
+          {/* ------------------------------------------------------------ */}
+
+          <Grid item xs={12} md={4}>
+            <Paper
+              elevation={3}
+              sx={{
+                p: 3,
+                borderRadius: 4,
+                height: "100%",
+                maxHeight: "85vh",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <Box
+                sx={{
+                  mb: 2,
+                  position: "sticky",
+                  top: 0,
+                  background: "white",
+                  zIndex: 10,
+                }}
+              >
+                <TextField
+                  fullWidth
+                  placeholder="🔍 Rechercher un livre..."
+                  value={searchBook}
+                  onChange={(e) => {
+                    setSearchBook(e.target.value);
+                    fetchAvailableBooks();
+                  }}
+                  sx={{
+                    "& .MuiOutlinedInput-root": {
+                      borderRadius: 3,
+                      background: "rgba(245,245,245,0.7)",
+                    },
+                  }}
+                />
+              </Box>
+
+              <Box sx={{ overflowY: "auto", pr: 1 }}>
+                {loadingBooks ? (
+                  <Box sx={{ textAlign: "center", py: 4 }}>
+                    <CircularProgress />
+                  </Box>
+                ) : availableBooks.length === 0 ? (
+                  <Typography
+                    color="text.secondary"
+                    sx={{ textAlign: "center", mt: 4 }}
+                  >
+                    Aucun livre trouvé.
+                  </Typography>
+                ) : (
+                  <List>
+                    {availableBooks.map((b) => (
+                      <ListItem key={b.id} disablePadding>
+                        <ListItemButton
+                          sx={{
+                            p: 2,
+                            borderRadius: 3,
+                            mb: 2,
+                            transition: "0.3s",
+                            "&:hover": {
+                              backgroundColor: "rgba(0,0,0,0.04)",
+                              transform: "translateY(-2px)",
+                            },
+                          }}
+                          onClick={() => handleBookClick(b.id)}
+                        >
+                          <Box sx={{ display: "flex", gap: 2 }}>
+                            {b.coverUrl ? (
+                              <Box
+                                component="img"
+                                src={b.coverUrl}
+                                alt={b.title}
+                                sx={{
+                                  width: 70,
+                                  height: 100,
+                                  borderRadius: 2,
+                                  objectFit: "cover",
+                                }}
+                              />
+                            ) : (
+                              <Box
+                                sx={{
+                                  width: 70,
+                                  height: 100,
+                                  borderRadius: 2,
+                                  backgroundColor: "grey.300",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                              >
+                                📘
+                              </Box>
+                            )}
+
+                            <Box>
+                              <Typography fontWeight="bold">
+                                {b.title}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                {b.author.name}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </ListItemButton>
+                      </ListItem>
+                    ))}
+                  </List>
+                )}
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+      )}
+
+      {/* ---------------------------------------------------------------- */}
+      {/* ----------------------------- TAB COLLECTIONS ----------------- */}
+      {/* ---------------------------------------------------------------- */}
+
+      {currentTab === 1 && (
         <Box>
-          {/* Header with Create Button */}
           <Box
             sx={{
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "center",
               mb: 3,
-              flexWrap: "wrap",
-              gap: 2,
+              alignItems: "center",
             }}
           >
             <Typography variant="h4" fontWeight="bold">
               📚 Mes Collections
             </Typography>
+
             <Button
               variant="contained"
-              color="primary"
               startIcon={<AddIcon />}
               onClick={() => setCreateCollectionOpen(true)}
-              size="large"
-              sx={{
-                fontWeight: "bold",
-                px: 3,
-              }}
             >
               Créer une collection
             </Button>
           </Box>
-
-          {series.length === 0 ? (
-            <Paper sx={{ p: 4, textAlign: "center" }}>
-              <MenuBookIcon sx={{ fontSize: 60, color: "grey.400", mb: 2 }} />
-              <Typography color="text.secondary" gutterBottom>
-                Aucune collection pour le moment.
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Ajoutez des livres avec une série pour créer des collections !
-              </Typography>
-            </Paper>
+          <TextField
+            fullWidth
+            placeholder="🔍 Rechercher un livre..."
+            value={searchCollection}
+            onChange={(e) => {
+              setSearchCollection(e.target.value);
+              fetchAvailableCollections();
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 3,
+                background: "rgba(245,245,245,0.7)",
+              },
+            }}
+          />
+          {loadingCollections ? (
+            <Box sx={{ textAlign: "center", py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : availableCollections.length === 0 ? (
+            <Typography
+              color="text.secondary"
+              sx={{ textAlign: "center", mt: 4 }}
+            >
+              Aucune collection trouvée.
+            </Typography>
           ) : (
             <List>
-              {series.map((s) => (
+              {availableCollections.map((s) => (
                 <Paper
                   key={s.id}
+                  elevation={2}
                   sx={{
                     mb: 2,
-                    overflow: "hidden",
+                    p: 2,
+                    borderRadius: 3,
                     cursor: "pointer",
-                    transition: "all 0.3s ease",
-                    "&:hover": {
-                      transform: "translateY(-2px)",
-                      boxShadow: 6,
-                    },
+                    transition: "0.3s",
+                    "&:hover": { backgroundColor: "action.hover" },
                   }}
-                  elevation={2}
                   onClick={() => navigate(`/series/${s.id}`)}
                 >
-                  <Box sx={{ display: "flex", gap: 2 }}>
-                    {/* Collection Cover */}
-                    <Box
-                      sx={{
-                        width: 150,
-                        height: 200,
-                        backgroundColor: "grey.100",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {s.books && s.books.length > 0 && s.books[0].coverUrl ? (
-                        <Box
-                          component="img"
-                          src={s.books[0].coverUrl}
-                          alt={s.title}
-                          sx={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
-                        />
-                      ) : (
-                        <MenuBookIcon
-                          sx={{ fontSize: 60, color: "grey.400" }}
-                        />
-                      )}
-                    </Box>
-
-                    {/* Collection Info */}
-                    <Box
-                      sx={{
-                        flex: 1,
-                        p: 2,
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Typography variant="h5" fontWeight="bold" gutterBottom>
-                        {s.title}
-                      </Typography>
-                      {s.books && s.books.length > 0 && (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          gutterBottom
-                        >
-                          par {s.books[0].author.name}
-                        </Typography>
-                      )}
-                      <Box
-                        sx={{
-                          display: "flex",
-                          gap: 1,
-                          mt: 1,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <Chip
-                          label={`${s.books?.length || 0} livre${
-                            (s.books?.length || 0) > 1 ? "s" : ""
-                          }`}
-                          color="primary"
-                          size="small"
-                        />
-                        {s.books && s.books.length > 0 && (
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ alignSelf: "center", ml: 1 }}
-                          >
-                            Cliquez pour voir les détails
-                          </Typography>
-                        )}
-                      </Box>
-                    </Box>
-                  </Box>
+                  <Typography variant="h6" fontWeight="bold">
+                    {s.title}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {s.books.length} livres
+                  </Typography>
                 </Paper>
               ))}
             </List>
@@ -775,7 +827,16 @@ function BookList() {
         </Box>
       )}
 
-      {/* Search Dialog */}
+      {/* ---------------------------------------------------------------- */}
+      {/* ----------------------------- TAB CHRONOLOGIE ----------------- */}
+      {/* ---------------------------------------------------------------- */}
+
+      {currentTab === 2 && <ChronologicalTab books={books} />}
+
+      {/* ---------------------------------------------------------------- */}
+      {/* -------------------------- DIALOG RECHERCHE ------------------- */}
+      {/* ---------------------------------------------------------------- */}
+
       <Dialog
         open={searchDialogOpen}
         onClose={() => setSearchDialogOpen(false)}
@@ -796,113 +857,76 @@ function BookList() {
             </IconButton>
           </Box>
         </DialogTitle>
+
         <DialogContent>
           <Box sx={{ display: "flex", gap: 2, mb: 3 }}>
             <TextField
               fullWidth
-              placeholder="Titre, auteur ou ISBN..."
+              placeholder="Titre, auteur, ISBN..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && handleSearchBooks()}
             />
-            <Button
-              variant="contained"
-              onClick={handleSearchBooks}
-              disabled={searching || !searchQuery.trim()}
-            >
+            <Button onClick={handleSearchBooks} variant="contained">
               {searching ? <CircularProgress size={24} /> : <SearchIcon />}
             </Button>
           </Box>
 
-          {searching && (
-            <Box sx={{ textAlign: "center", py: 4 }}>
-              <CircularProgress />
-              <Typography sx={{ mt: 2 }}>Recherche en cours...</Typography>
-            </Box>
-          )}
-
-          {!searching && searchResults.length === 0 && searchQuery && (
-            <Typography color="text.secondary" align="center">
-              Aucun résultat trouvé. Essayez une autre recherche.
-            </Typography>
-          )}
-
           <Grid container spacing={2}>
-            {searchResults.map((book, index) => (
-              <Grid item xs={12} key={book.key || index}>
+            {searchResults.map((book) => (
+              <Grid item xs={12} key={book.key}>
                 <Card
                   sx={{
                     display: "flex",
                     cursor: "pointer",
-                    "&:hover": { boxShadow: 4 },
+                    "&:hover": { boxShadow: 6 },
                   }}
                   onClick={() => handleSelectBook(book)}
                 >
                   {book.cover_i ? (
                     <CardMedia
                       component="img"
-                      sx={{ width: 100, objectFit: "cover" }}
+                      sx={{ width: 100 }}
                       image={`https://covers.openlibrary.org/b/id/${book.cover_i}-M.jpg`}
-                      alt={book.title}
                     />
                   ) : (
                     <Box
                       sx={{
                         width: 100,
+                        height: "100%",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         backgroundColor: "grey.200",
                       }}
                     >
-                      <Typography fontSize={40}>📚</Typography>
+                      📚
                     </Box>
                   )}
-                  <CardContent sx={{ flex: 1 }}>
-                    <Typography variant="h6" gutterBottom>
-                      {book.title}
-                    </Typography>
+
+                  <CardContent>
+                    <Typography variant="h6">{book.title}</Typography>
+
                     {book.author_name && (
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        gutterBottom
-                      >
-                        par {book.author_name.join(", ")}
+                      <Typography variant="body2" color="text.secondary">
+                        {book.author_name.join(", ")}
                       </Typography>
                     )}
-                    <Box
-                      sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}
-                    >
-                      {book.first_publish_year && (
-                        <Chip label={book.first_publish_year} size="small" />
-                      )}
-                      {book.series && book.series.length > 0 && (
-                        <Chip
-                          label={`Série: ${book.series[0]}`}
-                          size="small"
-                          color="primary"
-                        />
-                      )}
-                    </Box>
                   </CardContent>
                 </Card>
               </Grid>
             ))}
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSearchDialogOpen(false)}>Fermer</Button>
-        </DialogActions>
       </Dialog>
 
-      {/* Create Collection Dialog */}
+      {/* ---------------------------------------------------------------- */}
+      {/* --------------------------- DIALOG COLLECTION ----------------- */}
+      {/* ---------------------------------------------------------------- */}
+
       <Dialog open={createCollectionOpen} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          <Typography variant="h6" fontWeight="bold">
-            Créer une nouvelle collection
-          </Typography>
-        </DialogTitle>
+        <DialogTitle>Créer une collection</DialogTitle>
+
         <DialogContent dividers>
           <TextField
             fullWidth
@@ -910,89 +934,39 @@ function BookList() {
             value={newCollectionName}
             onChange={(e) => setNewCollectionName(e.target.value)}
             sx={{ mb: 3 }}
-            autoFocus
           />
 
-          <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-            Sélectionnez les livres à ajouter (optionnel)
+          <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 2 }}>
+            Sélectionnez les livres à ajouter :
           </Typography>
 
-          {books.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-              Aucun livre disponible. Ajoutez d'abord des livres à votre
-              bibliothèque.
-            </Typography>
-          ) : (
-            <List sx={{ maxHeight: 400, overflow: "auto" }}>
-              {books.map((book) => (
-                <ListItem
-                  key={book.id}
-                  disablePadding
-                  sx={{
-                    borderBottom: "1px solid",
-                    borderColor: "divider",
-                    "&:last-child": {
-                      borderBottom: "none",
-                    },
-                  }}
+          <List sx={{ maxHeight: 400, overflowY: "auto" }}>
+            {books.map((b) => (
+              <ListItem key={b.id} disablePadding>
+                <ListItemButton
+                  onClick={() => handleToggleBookForCollection(b.id)}
                 >
-                  <ListItemButton
-                    onClick={() => handleToggleBookForCollection(book.id)}
-                  >
-                    <Checkbox
-                      checked={selectedBooksForCollection.includes(book.id)}
-                      edge="start"
-                      tabIndex={-1}
-                      disableRipple
-                    />
-                    {book.coverUrl && (
-                      <Box
-                        component="img"
-                        src={book.coverUrl}
-                        alt={book.title}
-                        sx={{
-                          width: 50,
-                          height: 70,
-                          objectFit: "cover",
-                          borderRadius: 1,
-                          mr: 2,
-                          boxShadow: 1,
-                        }}
-                      />
-                    )}
-                    <ListItemText
-                      primary={
-                        <Typography fontWeight={500}>{book.title}</Typography>
-                      }
-                      secondary={`par ${book.author.name}`}
-                    />
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
-          )}
+                  <Checkbox
+                    checked={selectedBooksForCollection.includes(b.id)}
+                  />
+                  <ListItemText primary={b.title} />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2 }}>
+
+        <DialogActions>
           <Button
             onClick={() => {
               setCreateCollectionOpen(false);
-              setNewCollectionName("");
               setSelectedBooksForCollection([]);
             }}
-            size="large"
           >
             Annuler
           </Button>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={handleCreateCollection}
-            disabled={!newCollectionName.trim()}
-            startIcon={<AddIcon />}
-          >
-            Créer{" "}
-            {selectedBooksForCollection.length > 0 &&
-              `(${selectedBooksForCollection.length} livres)`}
+          <Button variant="contained" onClick={handleCreateCollection}>
+            Créer
           </Button>
         </DialogActions>
       </Dialog>

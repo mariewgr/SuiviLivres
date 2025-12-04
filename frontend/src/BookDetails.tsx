@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+
 import {
   Container,
   Paper,
@@ -21,9 +22,11 @@ import {
   ListItemAvatar,
   ListItemText,
 } from "@mui/material";
+
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
+import MenuBookIcon from "@mui/icons-material/MenuBook";
 
 interface Author {
   id: number;
@@ -55,6 +58,7 @@ const API_URL = "http://localhost:4000/api";
 export default function BookDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -72,85 +76,67 @@ export default function BookDetail() {
     try {
       setLoading(true);
       const response = await fetch(`${API_URL}/books/${id}`);
-      if (!response.ok) {
-        throw new Error("Book not found");
-      }
-      const data = await response.json();
-      setBook(data);
+      if (!response.ok) throw new Error("Book not found");
+      setBook(await response.json());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load book");
+      setError(err instanceof Error ? err.message : "Erreur de chargement");
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce livre ?")) {
-      return;
-    }
-
+    if (!window.confirm("Supprimer ce livre définitivement ?")) return;
     try {
-      const response = await fetch(`${API_URL}/books/${id}`, {
-        method: "DELETE",
-      });
-      if (response.ok) {
-        navigate("/");
-      }
-    } catch (err) {
-      alert("Failed to delete book");
+      await fetch(`${API_URL}/books/${id}`, { method: "DELETE" });
+      navigate("/");
+    } catch {
+      alert("Erreur lors de la suppression.");
     }
   };
 
   const markAsRead = async () => {
+    if (!book) return;
     setSaving(true);
-
-    const today = new Date().toISOString().split("T")[0];
 
     const payload = {
       ...book,
-      seriesTitle: book?.series?.title,
+      seriesTitle: book.series?.title,
       isRead: true,
-      readDate: today,
+      readDate: new Date().toISOString().split("T")[0],
     };
 
     try {
-      const response = await fetch(`${API_URL}/books/${id}`, {
+      await fetch(`${API_URL}/books/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) throw new Error("Erreur lors de la mise à jour");
-      else fetchBookDetail();
-    } catch (err) {
-      setError("Impossible de marquer comme lu");
-      console.error(err);
+      fetchBookDetail();
+    } finally {
       setSaving(false);
     }
   };
 
   const markAsNotRead = async () => {
+    if (!book) return;
     setSaving(true);
 
     const payload = {
       ...book,
-      seriesTitle: book?.series?.title,
-      readDate: null,
+      seriesTitle: book.series?.title,
       isRead: false,
+      readDate: null,
     };
 
     try {
-      const response = await fetch(`${API_URL}/books/${id}`, {
+      await fetch(`${API_URL}/books/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) throw new Error("Erreur lors de la mise à jour");
-      else fetchBookDetail();
-    } catch (err) {
-      setError("Impossible de marquer comme lu");
-      console.error(err);
+      fetchBookDetail();
+    } finally {
       setSaving(false);
     }
   };
@@ -158,85 +144,27 @@ export default function BookDetail() {
   const findSequels = async () => {
     if (!book) return;
     setSearching(true);
-
     try {
-      // Approche 1: Chercher le nom de la série dans le titre ou comme mot-clé général
-      let sequelResults = [];
+      let results = [];
+      const r = await fetch(
+        `https://openlibrary.org/search.json?title=${encodeURIComponent(
+          book.title
+        )}&author=${encodeURIComponent(book.author.name)}&limit=50`
+      );
+      const data = await r.json();
+      results = data.docs || [];
 
-      // D'abord, essayer de chercher par titre + auteur pour voir si une série existe
-      const searchUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(
-        book.title
-      )}&author=${encodeURIComponent(book.author.name)}&limit=1`;
-
-      const res = await fetch(searchUrl);
-      const data = await res.json();
-
-      let seriesName = null;
-      if (data.docs && data.docs[0] && data.docs[0].series) {
-        seriesName = data.docs[0].series[0];
-        console.log("Série trouvée:", seriesName);
-      }
-
-      if (seriesName) {
-        // Chercher tous les livres qui contiennent le nom de la série
-        // IMPORTANT: Utiliser 'q' au lieu de 'series'
-        const seriesSearchUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(
-          seriesName
-        )}&author=${encodeURIComponent(book.author.name)}&limit=50`;
-
-        const res2 = await fetch(seriesSearchUrl);
-        const data2 = await res2.json();
-        sequelResults = data2.docs || [];
-
-        console.log(`${sequelResults.length} livres trouvés dans la série`);
-      } else {
-        // Plan B: Si pas de série détectée, chercher par auteur
-        // et filtrer manuellement les titres similaires
-        const authorSearchUrl = `https://openlibrary.org/search.json?author=${encodeURIComponent(
-          book.author.name
-        )}&limit=50`;
-
-        const res3 = await fetch(authorSearchUrl);
-        const data3 = await res3.json();
-
-        // Chercher des patterns de suite (tome, volume, book, etc.)
-        const titleBase = book.title
-          .replace(/\s+(tome|volume|book|part|vol\.?)\s*\d+/i, "")
-          .trim();
-
-        sequelResults = data3.docs || [];
-
-        console.log(`${sequelResults.length} livres similaires trouvés`);
-      }
-
-      // Récupérer les livres existants
       const existing = await fetch(`${API_URL}/books`).then((r) => r.json());
 
-      // Filtrer les doublons
-      const missing = sequelResults.filter((b) => {
-        if (!b.title || !b.author_name[0]) return false;
-        if (
-          b.title.toLowerCase().trim() === book.title.toLowerCase().trim() ||
-          b.author_name[0].toLowerCase() !== book.author.name.toLowerCase()
-        )
-          return false;
+      const missing = results.filter((b) => {
+        if (!b.title || !b.author_name) return false;
         const titleLower = b.title.toLowerCase();
-
-        // Exclure les livres déjà dans la bibliothèque
+        if (titleLower === book.title.toLowerCase()) return false;
         return !existing.some((e) => e.title.toLowerCase() === titleLower);
       });
 
-      console.log(`${missing.length} livres potentielles trouvées`);
       setSequels(missing);
-
-      if (missing.length > 0) {
-        setOpenDialog(true);
-      } else {
-        setError("Aucune suite trouvée pour ce livre");
-      }
-    } catch (err) {
-      console.error("Erreur findSequels:", err);
-      setError("Erreur lors de la recherche de suites");
+      setOpenDialog(true);
     } finally {
       setSearching(false);
     }
@@ -248,353 +176,420 @@ export default function BookDetail() {
       authorName: book?.author.name,
       seriesTitle: item.series ? item.series[0] : book?.series?.title,
       summary: book?.summary,
-      rating: book?.rating ? book.rating : null,
+      rating: book?.rating || null,
       readDate: book?.readDate,
       citations: book?.citations,
       smut: book?.smut,
       coverUrl: book?.coverUrl,
       isRead: book?.isRead,
     };
+
     try {
-      const response = await fetch(`${API_URL}/books`, {
+      await fetch(`${API_URL}/books`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Échec de la mise à jour du livre");
-      } else {
-        fetchBookDetail();
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Échec de la mise à jour du livre"
-      );
-      setSaving(false);
+      fetchBookDetail();
+    } catch {
+      setError("Impossible d'ajouter la suite.");
     }
   };
 
-  if (loading) {
+  if (loading)
     return (
       <Container maxWidth="md" sx={{ py: 8, textAlign: "center" }}>
         <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Chargement...</Typography>
+        <Typography sx={{ mt: 2 }}>Chargement…</Typography>
       </Container>
     );
-  }
 
-  if (error || !book) {
+  if (error || !book)
     return (
       <Container maxWidth="md" sx={{ py: 8 }}>
         <Alert severity="error" sx={{ mb: 2 }}>
-          {error || "Livre non trouvé"}
+          {error || "Livre introuvable"}
         </Alert>
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => navigate("/")}
-          variant="outlined"
-        >
-          Retour à la liste
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate("/")}>
+          Retour
         </Button>
       </Container>
     );
-  }
 
   const citations = book.citations ? JSON.parse(book.citations) : [];
   const smut = book.smut ? JSON.parse(book.smut) : [];
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      {/* Back Button */}
-      <Button
-        startIcon={<ArrowBackIcon />}
-        onClick={() => navigate("/")}
-        sx={{ mb: 3 }}
-      >
-        Retour à la liste
-      </Button>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      {/* ------------------------------------------------------------------ */}
+      {/* TOP BAR (iOS minimal) */}
+      {/* ------------------------------------------------------------------ */}
 
-      {!book.isRead ? (
+      <Box sx={{ display: "flex", alignItems: "center", mb: 4, gap: 2 }}>
         <Button
-          variant="contained"
-          color="success"
-          onClick={markAsRead}
-          sx={{ mb: 3, ml: 2 }}
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate("/")}
+          sx={{ color: "black", textTransform: "none", fontSize: "1rem" }}
         >
-          ✔️ Marquer comme lu
+          Retour
         </Button>
-      ) : (
-        <Button
-          variant="contained"
-          color="success"
-          onClick={markAsNotRead}
-          sx={{ mb: 3, ml: 2 }}
-        >
-          Marquer comme non lu
-        </Button>
-      )}
 
-      <Button
-        variant="contained"
-        sx={{ mb: 3, ml: 2 }}
-        onClick={findSequels}
-        disabled={searching}
-      >
-        🔍 {searching ? "Recherche..." : "Trouver les suites"}
-      </Button>
-
-      <Paper elevation={3} sx={{ overflow: "hidden" }}>
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: { xs: "column", md: "row" },
-            gap: 3,
-          }}
-        >
-          {/* Book content unchanged */}
-
-          <Dialog
-            open={openDialog}
-            onClose={() => setOpenDialog(false)}
-            fullWidth
-          >
-            <DialogTitle>Suites trouvées</DialogTitle>
-            <DialogContent>
-              {sequels.length === 0 ? (
-                <Typography>Aucune suite trouvée.</Typography>
-              ) : (
-                <List>
-                  {sequels.map((s, i) => (
-                    <ListItem
-                      key={i}
-                      secondaryAction={
-                        <Button onClick={() => addBook(s)}>Ajouter</Button>
-                      }
-                    >
-                      <ListItemAvatar>
-                        <Avatar>
-                          {s.cover_i ? (
-                            <img
-                              src={`https://covers.openlibrary.org/b/id/${s.cover_i}-S.jpg`}
-                              alt=""
-                            />
-                          ) : (
-                            "📘"
-                          )}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText primary={s.title} />
-                      <ListItemText secondary={s.author_name} />
-                      {/* <ListItemText secondary={s.series[0]} /> */}
-                    </ListItem>
-                  ))}
-                </List>
-              )}
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setOpenDialog(false)}>Fermer</Button>
-            </DialogActions>
-          </Dialog>
-          {/* Book Cover */}
-          <Box
+        {book.isRead ? (
+          <Button
+            variant="outlined"
+            onClick={markAsNotRead}
             sx={{
-              width: { xs: "100%", md: 300 },
-              minHeight: 400,
-              backgroundColor: "grey.100",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              p: 3,
+              borderRadius: 2,
+              textTransform: "none",
+              color: "#333",
+              borderColor: "#CCC",
             }}
           >
-            {book.coverUrl ? (
-              <Box
-                component="img"
-                src={book.coverUrl}
-                alt={book.title}
-                sx={{
-                  maxWidth: "100%",
-                  maxHeight: 500,
-                  objectFit: "contain",
-                  borderRadius: 1,
-                  boxShadow: 3,
-                }}
-              />
-            ) : (
-              <Typography variant="h1" sx={{ opacity: 0.3 }}>
-                📚
-              </Typography>
-            )}
-          </Box>
+            Marquer comme non lu
+          </Button>
+        ) : (
+          <Button
+            variant="contained"
+            onClick={markAsRead}
+            sx={{
+              borderRadius: 2,
+              textTransform: "none",
+              background: "#111",
+              "&:hover": { background: "#000" },
+            }}
+          >
+            ✓ Marquer comme lu
+          </Button>
+        )}
 
-          {/* Book Details */}
-          <Box sx={{ flex: 1, p: 3 }}>
-            {/* Title and Read Status */}
-            <Box sx={{ mb: 2 }}>
-              <Typography
-                variant="h4"
-                component="h1"
-                fontWeight="bold"
-                gutterBottom
-              >
-                {book.title}
-              </Typography>
+        <Button
+          variant="outlined"
+          onClick={findSequels}
+          disabled={searching}
+          sx={{
+            textTransform: "none",
+            borderRadius: 2,
+            borderColor: "#CCC",
+            color: "#333",
+          }}
+        >
+          🔍 {searching ? "Recherche…" : "Suites"}
+        </Button>
+      </Box>
 
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                {book.author.name}
-              </Typography>
+      {/* ------------------------------------------------------------------ */}
+      {/* MAIN CARD (Apple look) */}
+      {/* ------------------------------------------------------------------ */}
 
-              <Typography
-                variant="h6"
-                fontWeight="bold"
-                color={book.isRead ? "success.main" : "text.secondary"}
-              >
-                {book.isRead ? "✓ Lu" : "Non lu"}
-              </Typography>
-            </Box>
-
-            {book.series && (
-              <Chip
-                label={`Série: ${book.series?.title}`}
-                color="primary"
-                variant="outlined"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`/series/${book.series?.id}`);
-                }}
-                sx={{
-                  mb: 2,
-                  cursor: "pointer",
-                  "&:hover": {
-                    backgroundColor: "primary.light",
-                    color: "white",
-                  },
-                }}
-              />
-            )}
-
-            {/* Meta Information */}
-            <Box sx={{ display: "flex", gap: 4, mb: 3, flexWrap: "wrap" }}>
-              {book.readDate && (
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Lu le
-                  </Typography>
-                  <Typography variant="body1" fontWeight="medium">
-                    {new Date(book.readDate).toLocaleDateString("fr-FR")}
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-
-            {/* Action Buttons */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 4,
+          borderRadius: 5,
+          border: "1px solid #EEE",
+          background: "white",
+          boxShadow: "0 10px 40px rgba(0,0,0,0.04)",
+          display: "flex",
+          flexDirection: { xs: "column", md: "row" },
+          gap: 4,
+        }}
+      >
+        {/* COVER */}
+        <Box
+          sx={{
+            width: { xs: "100%", md: 320 },
+            background: "#FAFAFA",
+            borderRadius: 4,
+            p: 3,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: "1px solid #EEE",
+          }}
+        >
+          {book.coverUrl ? (
             <Box
+              component="img"
+              src={book.coverUrl}
+              alt={book.title}
               sx={{
-                display: "flex",
-                gap: 2,
-                pt: 2,
-                borderTop: 1,
-                borderColor: "divider",
+                width: "100%",
+                borderRadius: 4,
+                objectFit: "cover",
               }}
-            >
-              <Button
-                variant="contained"
-                startIcon={<EditIcon />}
-                onClick={() => navigate(`/edit/${book.id}`)}
-              >
-                Modifier
-              </Button>
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={handleDelete}
-              >
-                Supprimer
-              </Button>
-            </Box>
-          </Box>
+            />
+          ) : (
+            <MenuBookIcon sx={{ fontSize: 100, opacity: 0.2 }} />
+          )}
         </Box>
 
-        <Divider />
+        {/* INFO */}
+        <Box sx={{ flex: 1 }}>
+          <Typography
+            variant="h4"
+            sx={{
+              fontWeight: 600,
+              mb: 1,
+              letterSpacing: "-0.5px",
+            }}
+          >
+            {book.title}
+          </Typography>
 
-        {/* Summary Section */}
-        {book.summary && (
-          <Box sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom fontWeight="bold">
-              Résumé
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              {book.summary}
-            </Typography>
+          <Typography variant="h6" sx={{ color: "#777", mb: 2 }}>
+            {book.author.name}
+          </Typography>
+
+          {book.series && (
+            <Chip
+              label={`Série : ${book.series.title}`}
+              variant="outlined"
+              onClick={() => navigate(`/series/${book.series?.id}`)}
+              sx={{
+                borderRadius: 2,
+                mb: 3,
+                cursor: "pointer",
+                "&:hover": { background: "#F0F0F0" },
+              }}
+            />
+          )}
+
+          <Box sx={{ display: "flex", gap: 4, mb: 3, flexWrap: "wrap" }}>
+            {book.rating !== null && (
+              <Box>
+                <Typography variant="caption" color="#888">
+                  Note
+                </Typography>
+                <Rating value={book.rating} readOnly />
+              </Box>
+            )}
+
+            {book.readDate && (
+              <Box>
+                <Typography variant="caption" color="#888">
+                  Lu le
+                </Typography>
+                <Typography fontWeight={500}>
+                  {new Date(book.readDate).toLocaleDateString("fr-FR")}
+                </Typography>
+              </Box>
+            )}
           </Box>
-        )}
 
-        {/* Citations Section */}
-        {citations.length > 0 && (
-          <>
-            <Divider />
-            <Box sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom fontWeight="bold">
-                Citations favorites
-              </Typography>
-              <Box
-                sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}
-              >
-                {citations.map((citation: string, index: number) => (
-                  <Paper
-                    key={index}
-                    elevation={0}
-                    sx={{
-                      p: 2,
-                      backgroundColor: "grey.50",
-                      borderLeft: 4,
-                      borderColor: "primary.main",
-                    }}
-                  >
-                    <Typography variant="body1" fontStyle="italic">
-                      "{citation}"
-                    </Typography>
-                  </Paper>
-                ))}
-              </Box>
-            </Box>
-          </>
-        )}
-        {/* Smut Section */}
-        {smut.length > 0 && (
-          <>
-            <Divider />
-            <Box sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom fontWeight="bold">
-                Chapitre de Smut
-              </Typography>
-              <Box
-                sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}
-              >
-                {smut.map((citation: string, index: number) => (
-                  <Paper
-                    key={index}
-                    elevation={0}
-                    sx={{
-                      p: 2,
-                      backgroundColor: "grey.50",
-                      borderLeft: 4,
-                      borderColor: "primary.main",
-                    }}
-                  >
-                    <Typography variant="body1" fontStyle="italic">
-                      "{citation}"
-                    </Typography>
-                  </Paper>
-                ))}
-              </Box>
-            </Box>
-          </>
-        )}
+          <Divider sx={{ my: 3 }} />
+
+          <Box sx={{ display: "flex", gap: 2 }}>
+            <Button
+              variant="contained"
+              startIcon={<EditIcon />}
+              sx={{
+                borderRadius: 2,
+                textTransform: "none",
+                background: "#111",
+                "&:hover": { background: "#000" },
+              }}
+              onClick={() => navigate(`/edit/${book.id}`)}
+            >
+              Modifier
+            </Button>
+
+            <Button
+              variant="outlined"
+              startIcon={<DeleteIcon />}
+              color="error"
+              sx={{
+                borderRadius: 2,
+                textTransform: "none",
+              }}
+              onClick={handleDelete}
+            >
+              Supprimer
+            </Button>
+          </Box>
+        </Box>
       </Paper>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* SUMMARY */}
+      {/* ------------------------------------------------------------------ */}
+      {book.summary && (
+        <Paper
+          elevation={0}
+          sx={{
+            mt: 4,
+            p: 3,
+            borderRadius: 4,
+            border: "1px solid #EEE",
+          }}
+        >
+          <Typography variant="h6" fontWeight="600" sx={{ mb: 1 }}>
+            Résumé
+          </Typography>
+          <Typography sx={{ color: "#666", lineHeight: 1.6 }}>
+            {book.summary}
+          </Typography>
+        </Paper>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* CITATIONS */}
+      {/* ------------------------------------------------------------------ */}
+      {citations.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            mt: 4,
+            p: 3,
+            borderRadius: 4,
+            border: "1px solid #EEE",
+          }}
+        >
+          <Typography variant="h6" fontWeight="600" sx={{ mb: 2 }}>
+            Citations
+          </Typography>
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {citations.map((c, i) => (
+              <Paper
+                key={i}
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 3,
+                  border: "1px solid #F2F2F2",
+                  background: "#FAFAFA",
+                }}
+              >
+                <Typography fontStyle="italic" color="#444">
+                  “{c}”
+                </Typography>
+              </Paper>
+            ))}
+          </Box>
+        </Paper>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* SMUT */}
+      {/* ------------------------------------------------------------------ */}
+      {smut.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            mt: 4,
+            p: 3,
+            borderRadius: 4,
+            border: "1px solid #EEE",
+          }}
+        >
+          <Typography variant="h6" fontWeight="600" sx={{ mb: 2 }}>
+            Chapitres Smut
+          </Typography>
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {smut.map((c, i) => (
+              <Paper
+                key={i}
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 3,
+                  border: "1px solid #F2F2F2",
+                  background: "#FAFAFA",
+                }}
+              >
+                <Typography fontStyle="italic" color="#444">
+                  “{c}”
+                </Typography>
+              </Paper>
+            ))}
+          </Box>
+        </Paper>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* DIALOG SUITES (Apple Style) */}
+      {/* ------------------------------------------------------------------ */}
+
+      <Dialog
+        open={openDialog}
+        onClose={() => setOpenDialog(false)}
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            p: 1,
+            boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>Suites trouvées</DialogTitle>
+
+        <DialogContent dividers sx={{ border: 0 }}>
+          {sequels.length === 0 ? (
+            <Typography>Aucune suite trouvée.</Typography>
+          ) : (
+            <List>
+              {sequels.map((s, i) => (
+                <ListItem
+                  key={i}
+                  sx={{
+                    borderRadius: 3,
+                    mb: 1,
+                    border: "1px solid #EEE",
+                  }}
+                  secondaryAction={
+                    <Button
+                      variant="contained"
+                      onClick={() => addBook(s)}
+                      sx={{
+                        borderRadius: 3,
+                        background: "#111",
+                        textTransform: "none",
+                        "&:hover": { background: "#000" },
+                      }}
+                    >
+                      Ajouter
+                    </Button>
+                  }
+                >
+                  <ListItemAvatar>
+                    <Avatar
+                      sx={{
+                        bgcolor: "#EEE",
+                        color: "#555",
+                      }}
+                    >
+                      {s.cover_i ? (
+                        <img
+                          src={`https://covers.openlibrary.org/b/id/${s.cover_i}-S.jpg`}
+                          alt=""
+                        />
+                      ) : (
+                        <MenuBookIcon fontSize="small" />
+                      )}
+                    </Avatar>
+                  </ListItemAvatar>
+
+                  <ListItemText
+                    primary={s.title}
+                    secondary={s.author_name?.[0]}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setOpenDialog(false)}
+            sx={{ textTransform: "none" }}
+          >
+            Fermer
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

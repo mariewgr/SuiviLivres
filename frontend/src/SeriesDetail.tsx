@@ -78,6 +78,7 @@ export default function SeriesDetail() {
   const [availableBooks, setAvailableBooks] = useState<Book[]>([]);
   const [selectedBooks, setSelectedBooks] = useState<number[]>([]);
   const [loadingBooks, setLoadingBooks] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetchSeriesDetail();
@@ -92,6 +93,7 @@ export default function SeriesDetail() {
       }
       const data = await response.json();
       setSeries(data);
+      setNewTitle(data.title);
     } catch (err) {
       setError(
         err instanceof Error
@@ -106,37 +108,29 @@ export default function SeriesDetail() {
   const fetchAvailableBooks = async () => {
     try {
       setLoadingBooks(true);
-      // Get all books
       const response = await fetch(`${API_URL}/books`);
       const allBooks = await response.json();
 
-      // Filter out books already in this series
       const booksInSeries = series?.books.map((b) => b.id) || [];
       const available = allBooks.filter(
         (book: Book) => !booksInSeries.includes(book.id)
       );
-      setAvailableBooks(available);
+      const filteredBooks = available.filter((book) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          book.title.toLowerCase().includes(q) ||
+          book.author.name.toLowerCase().includes(q)
+        );
+      });
+
+      setAvailableBooks(filteredBooks);
     } catch (err) {
       console.error("Error fetching books:", err);
     } finally {
       setLoadingBooks(false);
     }
   };
-  const fetchSeries = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`${API_URL}/series/${id}`);
-      const data = await res.json();
-      setSeries(data);
-      setNewTitle(data.title);
-    } catch (e) {
-      setError("Impossible de charger la collection");
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  // ---- RENAME COLLECTION ----
   const renameSeries = async () => {
     try {
       const res = await fetch(`${API_URL}/series/${id}`, {
@@ -148,13 +142,12 @@ export default function SeriesDetail() {
       if (!res.ok) throw new Error();
 
       setEditOpen(false);
-      fetchSeries();
+      fetchSeriesDetail();
     } catch {
       alert("Erreur lors du renommage");
     }
   };
 
-  // ---- DELETE COLLECTION ----
   const deleteSeries = async () => {
     try {
       const res = await fetch(`${API_URL}/series/${id}`, {
@@ -184,7 +177,6 @@ export default function SeriesDetail() {
 
   const handleAddBooks = async () => {
     try {
-      // Update each selected book to add it to this series
       await Promise.all(
         selectedBooks.map((bookId) =>
           fetch(`${API_URL}/books/${bookId}`, {
@@ -197,7 +189,6 @@ export default function SeriesDetail() {
         )
       );
 
-      // Refresh series data
       await fetchSeriesDetail();
       setAddDialogOpen(false);
       setSelectedBooks([]);
@@ -213,7 +204,6 @@ export default function SeriesDetail() {
     }
 
     try {
-      // Update the book to remove it from the series
       await fetch(`${API_URL}/books/${bookId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -222,7 +212,6 @@ export default function SeriesDetail() {
         }),
       });
 
-      // Refresh series data
       await fetchSeriesDetail();
     } catch (err) {
       console.error("Error removing book:", err);
@@ -239,12 +228,10 @@ export default function SeriesDetail() {
     const [moved] = items.splice(result.source.index, 1);
     items.splice(result.destination.index, 0, moved);
 
-    // Recompute tome numbers
     const updated = items.map((b, i) => ({ ...b, tomeNb: i + 1 }));
 
     setSeries({ ...series, books: updated });
 
-    // Send updates to backend
     for (const b of updated) {
       await fetch(`${API_URL}/books/${b.id}`, {
         method: "PUT",
@@ -253,6 +240,7 @@ export default function SeriesDetail() {
       });
     }
   };
+
   if (loading) {
     return (
       <Container maxWidth="lg" sx={{ py: 8, textAlign: "center" }}>
@@ -262,23 +250,17 @@ export default function SeriesDetail() {
     );
   }
 
-  if (!series)
-    return (
-      <Container sx={{ py: 5 }}>
-        <Alert severity="error">Collection introuvable</Alert>
-      </Container>
-    );
-
   if (error || !series) {
     return (
       <Container maxWidth="lg" sx={{ py: 8 }}>
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }}>
           {error || "Collection non trouvée"}
         </Alert>
         <Button
           startIcon={<ArrowBackIcon />}
           onClick={() => navigate("/")}
           variant="outlined"
+          sx={{ borderRadius: 3 }}
         >
           Retour à l'accueil
         </Button>
@@ -294,7 +276,6 @@ export default function SeriesDetail() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      {/* Back Button */}
       <Button
         startIcon={<ArrowBackIcon />}
         onClick={() => navigate("/")}
@@ -304,7 +285,17 @@ export default function SeriesDetail() {
       </Button>
 
       {/* Series Header */}
-      <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
+      <Paper
+        elevation={4}
+        sx={{
+          p: 4,
+          mb: 4,
+          borderRadius: 4,
+          backdropFilter: "blur(6px)",
+          background: "rgba(255,255,255,0.7)",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+        }}
+      >
         <Box
           sx={{
             display: "flex",
@@ -321,11 +312,28 @@ export default function SeriesDetail() {
               <Typography variant="h3" component="h1" fontWeight="bold">
                 {series.title}
               </Typography>
-              <Box sx={{ display: "flex", gap: 2 }}>
-                <IconButton onClick={() => setEditOpen(true)}>
+              <Box sx={{ display: "flex", gap: 2, mt: 1 }}>
+                <IconButton
+                  onClick={() => setEditOpen(true)}
+                  sx={{
+                    "&:hover": {
+                      backgroundColor: "primary.light",
+                      color: "white",
+                    },
+                  }}
+                >
                   <EditIcon />
                 </IconButton>
-                <IconButton color="error" onClick={() => setDeleteOpen(true)}>
+                <IconButton
+                  color="error"
+                  onClick={() => setDeleteOpen(true)}
+                  sx={{
+                    "&:hover": {
+                      backgroundColor: "error.main",
+                      color: "white",
+                    },
+                  }}
+                >
                   <DeleteIcon />
                 </IconButton>
               </Box>
@@ -341,6 +349,12 @@ export default function SeriesDetail() {
             size="large"
             startIcon={<AddIcon />}
             onClick={handleOpenAddDialog}
+            sx={{
+              py: 1.4,
+              borderRadius: 3,
+              fontWeight: "bold",
+              textTransform: "none",
+            }}
           >
             Ajouter des livres
           </Button>
@@ -354,7 +368,7 @@ export default function SeriesDetail() {
                 textAlign: "center",
                 p: 2,
                 backgroundColor: "grey.50",
-                borderRadius: 2,
+                borderRadius: 3,
               }}
             >
               <Typography variant="h4" color="primary" fontWeight="bold">
@@ -372,7 +386,7 @@ export default function SeriesDetail() {
                   textAlign: "center",
                   p: 2,
                   backgroundColor: "grey.50",
-                  borderRadius: 2,
+                  borderRadius: 3,
                 }}
               >
                 <Rating value={averageRating} readOnly precision={0.1} />
@@ -395,7 +409,15 @@ export default function SeriesDetail() {
       </Typography>
 
       {series.books.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: "center" }}>
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            textAlign: "center",
+            borderRadius: 4,
+            background: "rgba(255,255,255,0.7)",
+          }}
+        >
           <Typography color="text.secondary" gutterBottom>
             Aucun livre dans cette collection pour le moment.
           </Typography>
@@ -403,7 +425,12 @@ export default function SeriesDetail() {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={handleOpenAddDialog}
-            sx={{ mt: 2 }}
+            sx={{
+              mt: 2,
+              py: 1.4,
+              borderRadius: 3,
+              fontWeight: "bold",
+            }}
           >
             Ajouter des livres
           </Button>
@@ -415,21 +442,16 @@ export default function SeriesDetail() {
               <Grid
                 container
                 spacing={3}
-                sx={{ mt: 3 }}
                 {...provided.droppableProps}
                 ref={provided.innerRef}
               >
                 {series.books
                   .sort((a, b) => {
-                    // Si les deux ont un tomeNB, comparer les numéros
                     if (a.tomeNb && b.tomeNb) {
                       return a.tomeNb - b.tomeNb;
                     }
-                    // Si seulement a a un tomeNB, il vient en premier
                     if (a.tomeNb) return -1;
-                    // Si seulement b a un tomeNB, il vient en premier
                     if (b.tomeNb) return 1;
-                    // Si aucun n'a de tomeNB, garder l'ordre actuel
                     return 0;
                   })
                   .map((book, index) => (
@@ -455,8 +477,10 @@ export default function SeriesDetail() {
                               flexDirection: "column",
                               position: "relative",
                               transition: "all 0.3s ease",
+                              borderRadius: 3,
                               "&:hover": {
                                 boxShadow: 6,
+                                transform: "translateY(-4px)",
                               },
                             }}
                           >
@@ -516,7 +540,6 @@ export default function SeriesDetail() {
                                   <Typography fontSize={60}>📚</Typography>
                                 </Box>
                               )}
-                              {/* Book Number Badge */}
                               <Chip
                                 label={`#${index + 1}`}
                                 color="primary"
@@ -601,6 +624,7 @@ export default function SeriesDetail() {
           </Droppable>
         </DragDropContext>
       )}
+
       {/* Add Books Dialog */}
       <Dialog
         open={addDialogOpen}
@@ -610,6 +634,9 @@ export default function SeriesDetail() {
         }}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: { borderRadius: 3 },
+        }}
       >
         <DialogTitle>
           <Typography variant="h6" fontWeight="bold">
@@ -617,6 +644,19 @@ export default function SeriesDetail() {
           </Typography>
         </DialogTitle>
         <DialogContent dividers>
+          <TextField
+            fullWidth
+            placeholder="Rechercher par titre ou auteur..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              fetchAvailableBooks();
+            }}
+            sx={{
+              mb: 2,
+              "& .MuiOutlinedInput-root": { borderRadius: 3 },
+            }}
+          />
           {loadingBooks ? (
             <Box sx={{ textAlign: "center", py: 4 }}>
               <CircularProgress />
@@ -644,7 +684,13 @@ export default function SeriesDetail() {
                 >
                   <ListItemButton
                     onClick={() => handleToggleBook(book.id)}
-                    sx={{ py: 1.5 }}
+                    sx={{
+                      py: 1.5,
+                      borderRadius: 2,
+                      "&:hover": {
+                        backgroundColor: "rgba(0,0,0,0.04)",
+                      },
+                    }}
                   >
                     <Checkbox
                       checked={selectedBooks.includes(book.id)}
@@ -685,25 +731,44 @@ export default function SeriesDetail() {
               setAddDialogOpen(false);
               setSelectedBooks([]);
             }}
-            size="large"
+            sx={{
+              borderRadius: 3,
+              textTransform: "none",
+              fontWeight: 600,
+            }}
           >
             Annuler
           </Button>
           <Button
             variant="contained"
-            size="large"
             onClick={handleAddBooks}
             disabled={selectedBooks.length === 0}
             startIcon={<AddIcon />}
+            sx={{
+              py: 1.2,
+              borderRadius: 3,
+              fontWeight: "bold",
+              textTransform: "none",
+            }}
           >
             Ajouter {selectedBooks.length > 0 && `(${selectedBooks.length})`}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* --- EDIT SERIES DIALOG --- */}
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)}>
-        <DialogTitle>Renommer la collection</DialogTitle>
+      {/* Edit Series Dialog */}
+      <Dialog
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        PaperProps={{
+          sx: { borderRadius: 3 },
+        }}
+      >
+        <DialogTitle>
+          <Typography variant="h6" fontWeight="bold">
+            Renommer la collection
+          </Typography>
+        </DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -712,28 +777,76 @@ export default function SeriesDetail() {
             label="Nouveau nom"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Annuler</Button>
-          <Button variant="contained" onClick={renameSeries}>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button
+            onClick={() => setEditOpen(false)}
+            sx={{
+              borderRadius: 3,
+              textTransform: "none",
+              fontWeight: 600,
+            }}
+          >
+            Annuler
+          </Button>
+          <Button
+            variant="contained"
+            onClick={renameSeries}
+            sx={{
+              py: 1.2,
+              borderRadius: 3,
+              fontWeight: "bold",
+              textTransform: "none",
+            }}
+          >
             Renommer
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* --- DELETE SERIES DIALOG --- */}
-      <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>
-        <DialogTitle>Supprimer la collection ?</DialogTitle>
+      {/* Delete Series Dialog */}
+      <Dialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        PaperProps={{
+          sx: { borderRadius: 3 },
+        }}
+      >
+        <DialogTitle>
+          <Typography variant="h6" fontWeight="bold">
+            Supprimer la collection ?
+          </Typography>
+        </DialogTitle>
         <DialogContent>
           <Typography>
             Tous les livres garderont leurs données mais seront retirés de la
             collection.
           </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteOpen(false)}>Annuler</Button>
-          <Button color="error" variant="contained" onClick={deleteSeries}>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button
+            onClick={() => setDeleteOpen(false)}
+            sx={{
+              borderRadius: 3,
+              textTransform: "none",
+              fontWeight: 600,
+            }}
+          >
+            Annuler
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={deleteSeries}
+            sx={{
+              py: 1.2,
+              borderRadius: 3,
+              fontWeight: "bold",
+              textTransform: "none",
+            }}
+          >
             Supprimer
           </Button>
         </DialogActions>

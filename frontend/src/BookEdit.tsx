@@ -59,6 +59,7 @@ export default function BookEdit() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allSeries, setAllSeries] = useState<SeriesOption[]>([]);
+  const [newCollectionName, setNewCollectionName] = useState("");
 
   const [form, setForm] = useState({
     title: "",
@@ -88,7 +89,6 @@ export default function BookEdit() {
       }
       const book: Book = await response.json();
 
-      // Parse citations if they exist
       let citationsString = "";
       if (book.citations) {
         try {
@@ -99,7 +99,6 @@ export default function BookEdit() {
         }
       }
 
-      // Parse smut if they exist
       let smutString = "";
       if (book.smut) {
         try {
@@ -110,7 +109,6 @@ export default function BookEdit() {
         }
       }
 
-      // Format date for input field
       let formattedDate = "";
       if (book.readDate) {
         const date = new Date(book.readDate);
@@ -167,7 +165,11 @@ export default function BookEdit() {
     setSaving(true);
     setError(null);
 
-    // Prepare citations array
+    let finalSeriesTitle = form.seriesTitle;
+    if (form.seriesTitle === "__new__" && newCollectionName.trim()) {
+      finalSeriesTitle = newCollectionName.trim();
+    }
+
     let citationsArray = [];
     if (form.citations.trim()) {
       citationsArray = form.citations
@@ -176,7 +178,6 @@ export default function BookEdit() {
         .filter((c) => c.length > 0);
     }
 
-    // Prepare smut array
     let smutArray = [];
     if (form.smut.trim()) {
       smutArray = form.smut
@@ -188,7 +189,7 @@ export default function BookEdit() {
     const payload = {
       title: form.title.trim(),
       authorName: form.authorName.trim(),
-      seriesTitle: form.seriesTitle.trim() || null,
+      seriesTitle: finalSeriesTitle || null,
       summary: form.summary.trim() || null,
       rating: form.rating ? parseInt(form.rating) : null,
       readDate: form.readDate || null,
@@ -211,7 +212,6 @@ export default function BookEdit() {
         throw new Error(errorData.error || "Échec de la mise à jour du livre");
       }
 
-      // Navigate back to the book detail page
       navigate(`/book/${id}`);
     } catch (err) {
       setError(
@@ -249,7 +249,6 @@ export default function BookEdit() {
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
-      {/* Back Button */}
       <Button
         startIcon={<ArrowBackIcon />}
         onClick={() => navigate(`/book/${id}`)}
@@ -259,20 +258,32 @@ export default function BookEdit() {
         Retour au livre
       </Button>
 
-      <Paper elevation={3} sx={{ p: 4 }}>
-        <Typography variant="h4" gutterBottom fontWeight="bold">
+      <Paper
+        elevation={4}
+        sx={{
+          p: 4,
+          borderRadius: 4,
+          backdropFilter: "blur(6px)",
+          background: "rgba(255,255,255,0.7)",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+        }}
+      >
+        <Typography variant="h5" fontWeight="bold" sx={{ mb: 3 }}>
           ✏️ Modifier le livre
         </Typography>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          <Alert
+            severity="error"
+            sx={{ mb: 3, borderRadius: 3 }}
+            onClose={() => setError(null)}
+          >
             {error}
           </Alert>
         )}
 
         <Box component="form" onSubmit={handleSubmit}>
-          <Grid container spacing={3}>
-            {/* Title */}
+          <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
@@ -282,6 +293,7 @@ export default function BookEdit() {
                 value={form.title}
                 onChange={handleChange}
                 disabled={saving}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                 error={!form.title.trim() && form.title !== ""}
                 helperText={
                   !form.title.trim() && form.title !== ""
@@ -291,7 +303,6 @@ export default function BookEdit() {
               />
             </Grid>
 
-            {/* Author */}
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
@@ -301,6 +312,7 @@ export default function BookEdit() {
                 value={form.authorName}
                 onChange={handleChange}
                 disabled={saving}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                 error={!form.authorName.trim() && form.authorName !== ""}
                 helperText={
                   !form.authorName.trim() && form.authorName !== ""
@@ -310,30 +322,29 @@ export default function BookEdit() {
               />
             </Grid>
 
-            {/* Series Dropdown */}
             <Grid item xs={12}>
               <FormControl fullWidth disabled={saving}>
-                <InputLabel id="series-select-label">
-                  Collection / Série
-                </InputLabel>
+                <InputLabel>Série (optionnel)</InputLabel>
                 <Select
-                  labelId="series-select-label"
                   value={form.seriesTitle}
-                  label="Collection / Série"
+                  label="Série (optionnel)"
                   onChange={(e) =>
                     setForm({ ...form, seriesTitle: e.target.value })
                   }
+                  sx={{ borderRadius: 3 }}
                 >
                   <MenuItem value="">
-                    <em>Aucune collection</em>
+                    <em>Aucune série</em>
                   </MenuItem>
-                  {allSeries.map((series) => (
-                    <MenuItem key={series.id} value={series.title}>
-                      {series.title}
+
+                  {allSeries.map((s) => (
+                    <MenuItem key={s.id} value={s.title}>
+                      {s.title}
                     </MenuItem>
                   ))}
+
                   <MenuItem value="__new__">
-                    <em>+ Créer une nouvelle collection...</em>
+                    <em>+ Nouvelle série…</em>
                   </MenuItem>
                 </Select>
               </FormControl>
@@ -341,22 +352,18 @@ export default function BookEdit() {
               {form.seriesTitle === "__new__" && (
                 <TextField
                   fullWidth
-                  label="Nom de la nouvelle collection"
-                  placeholder="Entrez le nom de la collection"
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      seriesTitle:
-                        e.target.value === "" ? "__new__" : e.target.value,
-                    })
-                  }
-                  sx={{ mt: 2 }}
+                  label="Nom de la nouvelle série"
+                  value={newCollectionName}
+                  onChange={(e) => setNewCollectionName(e.target.value)}
+                  sx={{
+                    mt: 2,
+                    "& .MuiOutlinedInput-root": { borderRadius: 3 },
+                  }}
                   autoFocus
                 />
               )}
             </Grid>
 
-            {/* Summary */}
             <Grid item xs={12}>
               <TextField
                 fullWidth
@@ -365,34 +372,38 @@ export default function BookEdit() {
                 value={form.summary}
                 onChange={handleChange}
                 multiline
-                rows={4}
+                rows={3}
                 disabled={saving}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                 placeholder="Décrivez brièvement l'histoire du livre..."
               />
             </Grid>
 
-            {/* Rating */}
-            <Grid item xs={12} sm={4}>
-              <Box>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Note
-                </Typography>
-                <Rating
-                  value={form.rating ? parseInt(form.rating) : 0}
-                  onChange={(event, newValue) => {
-                    setForm({
-                      ...form,
-                      rating: newValue ? newValue.toString() : "",
-                    });
-                  }}
-                  size="large"
-                  sx={{ mt: 0.5 }}
-                />
-              </Box>
+            <Grid item xs={6}>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+                Note
+              </Typography>
+              <Rating
+                value={form.rating ? parseInt(form.rating) : 0}
+                onChange={(e, v) =>
+                  setForm({ ...form, rating: v ? v.toString() : "" })
+                }
+              />
             </Grid>
 
-            {/* Read Date */}
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="Numéro du tome"
+                name="tomeNb"
+                value={form.tomeNb}
+                onChange={handleChange}
+                disabled={saving}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
               <TextField
                 fullWidth
                 type="date"
@@ -402,24 +413,10 @@ export default function BookEdit() {
                 onChange={handleChange}
                 InputLabelProps={{ shrink: true }}
                 disabled={saving}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
               />
             </Grid>
 
-            {/* Tome number */}
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                type="int"
-                label="Numéro de Tome"
-                name="tomeNb"
-                value={form.tomeNb}
-                onChange={handleChange}
-                InputLabelProps={{ shrink: true }}
-                disabled={saving}
-              />
-            </Grid>
-
-            {/* Cover URL */}
             <Grid item xs={12}>
               <TextField
                 fullWidth
@@ -428,42 +425,36 @@ export default function BookEdit() {
                 value={form.coverUrl}
                 onChange={handleChange}
                 disabled={saving}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                 placeholder="https://exemple.com/couverture.jpg"
                 helperText="Laisser vide pour utiliser la couverture automatique d'Open Library"
               />
             </Grid>
 
-            {/* Citations */}
             <Grid item xs={12}>
               <TextField
                 fullWidth
-                label="Citations favorites"
+                label="Citations (séparées par ; )"
                 name="citations"
                 value={form.citations}
                 onChange={handleChange}
-                multiline
-                rows={3}
                 disabled={saving}
-                placeholder="Séparez chaque citation par un point-virgule (;)"
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
               />
             </Grid>
 
-            {/* Smut */}
             <Grid item xs={12}>
               <TextField
                 fullWidth
-                label="Chapitre de Smut"
+                label="Chapitres Smut (séparés par ; )"
                 name="smut"
                 value={form.smut}
                 onChange={handleChange}
-                multiline
-                rows={3}
                 disabled={saving}
-                placeholder="Séparez chaque chapitre par un point-virgule (;)"
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
               />
             </Grid>
 
-            {/* Action Buttons */}
             <Grid item xs={12}>
               <Box
                 sx={{
@@ -477,7 +468,12 @@ export default function BookEdit() {
                   variant="outlined"
                   onClick={() => navigate(`/book/${id}`)}
                   disabled={saving}
-                  size="large"
+                  sx={{
+                    py: 1.4,
+                    borderRadius: 3,
+                    fontWeight: "bold",
+                    textTransform: "none",
+                  }}
                 >
                   Annuler
                 </Button>
@@ -494,7 +490,12 @@ export default function BookEdit() {
                   disabled={
                     saving || !form.title.trim() || !form.authorName.trim()
                   }
-                  size="large"
+                  sx={{
+                    py: 1.4,
+                    borderRadius: 3,
+                    fontWeight: "bold",
+                    fontSize: "1rem",
+                  }}
                 >
                   {saving
                     ? "Enregistrement..."
