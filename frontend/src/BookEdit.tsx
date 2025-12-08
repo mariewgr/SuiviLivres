@@ -18,7 +18,7 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SaveIcon from "@mui/icons-material/Save";
-
+import { API_URL } from "./api";
 interface Author {
   id: number;
   name: string;
@@ -49,8 +49,6 @@ interface SeriesOption {
   id: number;
   title: string;
 }
-
-const API_URL = "https://suivilivres.onrender.com/api";
 
 export default function BookEdit() {
   const { id } = useParams<{ id: string }>();

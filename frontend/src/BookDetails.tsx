@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { API_URL } from "./api";
 
 import {
   Container,
@@ -55,8 +56,6 @@ interface Book {
   seriesUrl?: string;
   tomeNb?: number;
 }
-
-const API_URL = "https://suivilivres.onrender.com/api";
 
 export default function BookDetail() {
   const { id } = useParams<{ id: string }>();

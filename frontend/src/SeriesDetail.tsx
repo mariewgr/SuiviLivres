@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { API_URL } from "./api";
 
 import {
   Container,
@@ -60,8 +61,6 @@ interface Series {
   books: Book[];
   createdAt: string;
 }
-
-const API_URL = "https://suivilivres.onrender.com/api";
 
 export default function SeriesDetail() {
   const { id } = useParams<{ id: string }>();

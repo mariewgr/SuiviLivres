@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import BookDetail from "./BookDetails";
 import BookEdit from "./BookEdit";
 import SeriesDetail from "./SeriesDetail";
+import { API_URL } from "./api";
 
 import {
   Container,
@@ -95,8 +96,6 @@ interface SeriesWithCount {
     books: number;
   };
 }
-
-const API_URL = "https://suivilivres.onrender.com/api";
 
 function BookList() {
   const navigate = useNavigate();
