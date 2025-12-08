@@ -1,4 +1,4 @@
-export const API_URL = "http://localhost:10000/api";
+export const API_URL = "https://suivilivres.onrender.com/api";
 
 export const getBooks = async () => {
   const res = await fetch(`${API_URL}/api/books`);

@@ -9,7 +9,10 @@ const fetch = globalThis.fetch || require("node-fetch");
 const app = express();
 const prisma = new PrismaClient();
 
-app.use(cors());
+app.use(cors({
+  origin: "https://mariewgr.github.io/SuiviLivres",
+}));
+
 app.use(express.json());
 
 // Route test
