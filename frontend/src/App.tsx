@@ -65,22 +65,26 @@ interface Book {
   smut?: string[];
   author: Author;
   series?: Series;
+  bookNodeUrl?: string;
+  seriesUrl?: string;
+  tomeNb?: number;
 }
 
 interface PendingBook {
   book: Book;
   coverUrl?: string;
-  nextSeriesTitle?: string;
 }
 
-interface OpenLibraryBook {
+interface ScrapedBook {
   key: string;
   title: string;
   author_name?: string[];
-  cover_i?: number;
+  description?: string;
+  cover?: string;
   first_publish_year?: number;
   isbn?: string[];
   series?: string[];
+  link: string;
 }
 
 interface SeriesWithCount {
@@ -109,6 +113,9 @@ function BookList() {
     citations: "",
     smut: "",
     tomeNb: -1,
+    coverUrl: "",
+    bookNodeUrl: "",
+    seriesUrl: "",
   });
 
   const [pendingBook, setPendingBook] = useState<PendingBook | null>(null);
@@ -119,9 +126,8 @@ function BookList() {
   const [searchBook, setSearchBook] = useState("");
   const [searchCollection, setSearchCollection] = useState("");
 
-  const [searchResults, setSearchResults] = useState<OpenLibraryBook[]>([]);
+  const [searchResults, setSearchResults] = useState<ScrapedBook[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedBooksToRead, setSelectedBooksToRead] = useState<Book[]>([]);
   const [availableBooks, setAvailableBooks] = useState<Book[]>([]);
   const [availableCollections, setAvailableCollections] = useState<
     SeriesWithCount[]
@@ -201,38 +207,41 @@ function BookList() {
     setSearching(true);
     try {
       const response = await fetch(
-        `https://openlibrary.org/search.json?q=${encodeURIComponent(
-          searchQuery
-        )}&limit=10`
+        `${API_URL}/booknode/search?q=${encodeURIComponent(searchQuery)}`
       );
       const data = await response.json();
-      setSearchResults(data.docs || []);
+      setSearchResults(data);
     } finally {
       setSearching(false);
     }
   };
 
-  const handleSelectBook = (book: OpenLibraryBook) => {
-    const coverUrl = book.cover_i
-      ? `https://covers.openlibrary.org/b/id/${book.cover_i}-L.jpg`
-      : "";
+  const handleSelectBook = async (book: ScrapedBook) => {
+    try {
+      const details = await fetch(
+        `${API_URL}/booknode/details?url=${encodeURIComponent(book.link)}`
+      ).then((r) => r.json());
 
-    setForm({
-      title: book.title || "",
-      authorName: book.author_name?.[0] || "",
-      seriesTitle: book.series?.[0] || "",
-      summary: "",
-      rating: "",
-      citations: "",
-      smut: "",
-      tomeNb: -1,
-    });
+      setForm({
+        title: details.title || book.title,
+        authorName: book.author_name ? book.author_name[0] : "",
+        seriesTitle: book.series?.[0] || "",
+        summary: details.description,
+        rating: "",
+        citations: "",
+        smut: "",
+        seriesUrl: details.seriesUrl,
+        tomeNb: details.volume || -1,
+        coverUrl: book.cover || "",
+        bookNodeUrl: book.link,
+      });
 
-    (form as any).coverUrl = coverUrl;
-
-    setSearchDialogOpen(false);
-    setSearchQuery("");
-    setSearchResults([]);
+      setSearchDialogOpen(false);
+      setSearchQuery("");
+      setSearchResults([]);
+    } catch (e) {
+      console.log(e);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -257,7 +266,7 @@ function BookList() {
 
     const data = await res.json();
 
-    if (data.coverUrl || data.nextSeriesTitle) {
+    if (data.coverUrl) {
       setPendingBook(data);
       setOpenDialog(true);
     } else {
@@ -274,6 +283,9 @@ function BookList() {
       citations: "",
       smut: "",
       tomeNb: -1,
+      coverUrl: "",
+      seriesUrl: "",
+      bookNodeUrl: "",
     });
 
     setNewCollectionName("");
@@ -774,7 +786,7 @@ function BookList() {
           </Box>
           <TextField
             fullWidth
-            placeholder="🔍 Rechercher un livre..."
+            placeholder="🔍 Rechercher une collection..."
             value={searchCollection}
             onChange={(e) => {
               setSearchCollection(e.target.value);
@@ -873,6 +885,9 @@ function BookList() {
           </Box>
 
           <Grid container spacing={2}>
+            {searchResults.length === 0 && (
+              <Typography>Aucun livre trouvé.</Typography>
+            )}
             {searchResults.map((book) => (
               <Grid item xs={12} key={book.key}>
                 <Card
@@ -883,11 +898,11 @@ function BookList() {
                   }}
                   onClick={() => handleSelectBook(book)}
                 >
-                  {book.cover_i ? (
+                  {book.cover ? (
                     <CardMedia
                       component="img"
                       sx={{ width: 100 }}
-                      image={`https://covers.openlibrary.org/b/id/${book.cover_i}-M.jpg`}
+                      image={book.cover}
                     />
                   ) : (
                     <Box
@@ -907,9 +922,9 @@ function BookList() {
                   <CardContent>
                     <Typography variant="h6">{book.title}</Typography>
 
-                    {book.author_name && (
+                    {book?.author_name && (
                       <Typography variant="body2" color="text.secondary">
-                        {book.author_name.join(", ")}
+                        {book?.author_name.join(", ")}
                       </Typography>
                     )}
                   </CardContent>

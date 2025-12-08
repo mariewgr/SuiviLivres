@@ -27,6 +27,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
+import Book from "./App";
 
 interface Author {
   id: number;
@@ -41,16 +42,18 @@ interface Series {
 interface Book {
   id: number;
   title: string;
-  author: Author;
-  series?: Series | null;
-  summary?: string | null;
-  coverUrl?: string | null;
-  rating?: number | null;
-  readDate?: string | null;
-  citations?: string | null;
-  smut?: string | null;
+  summary?: string;
+  rating?: number;
+  coverUrl?: string;
+  citations?: string[];
   isRead?: boolean;
-  createdAt: string;
+  readDate?: string;
+  smut?: string[];
+  author: Author;
+  series?: Series;
+  bookNodeUrl?: string;
+  seriesUrl?: string;
+  tomeNb?: number;
 }
 
 const API_URL = "http://localhost:4000/api";
@@ -64,7 +67,7 @@ export default function BookDetail() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [sequels, setSequels] = useState([]);
+  const [sequels, setSequels] = useState(Array<Book>);
   const [openDialog, setOpenDialog] = useState(false);
   const [searching, setSearching] = useState(false);
 
@@ -145,25 +148,21 @@ export default function BookDetail() {
     if (!book) return;
     setSearching(true);
     try {
-      let results = [];
-      const r = await fetch(
-        `https://openlibrary.org/search.json?title=${encodeURIComponent(
-          book.title
-        )}&author=${encodeURIComponent(book.author.name)}&limit=50`
-      );
-      const data = await r.json();
-      results = data.docs || [];
-
-      const existing = await fetch(`${API_URL}/books`).then((r) => r.json());
-
-      const missing = results.filter((b) => {
-        if (!b.title || !b.author_name) return false;
+      var books = Array<Book>();
+      if (book.seriesUrl) {
+        books = await fetch(
+          `${API_URL}/booknode/series?url=${encodeURIComponent(book.seriesUrl)}`
+        ).then((r) => r.json());
+      }
+      const missing = books.filter((b) => {
+        if (!b.title || !book.author) return false;
         const titleLower = b.title.toLowerCase();
         if (titleLower === book.title.toLowerCase()) return false;
-        return !existing.some((e) => e.title.toLowerCase() === titleLower);
+        return true;
       });
 
       setSequels(missing);
+      console.log(missing);
       setOpenDialog(true);
     } finally {
       setSearching(false);
@@ -174,14 +173,17 @@ export default function BookDetail() {
     const payload = {
       title: item.title,
       authorName: book?.author.name,
-      seriesTitle: item.series ? item.series[0] : book?.series?.title,
-      summary: book?.summary,
-      rating: book?.rating || null,
-      readDate: book?.readDate,
-      citations: book?.citations,
-      smut: book?.smut,
-      coverUrl: book?.coverUrl,
-      isRead: book?.isRead,
+      seriesTitle: book?.series?.title,
+      summary: item?.summary,
+      rating: null,
+      readDate: null,
+      citations: [],
+      smut: [],
+      coverUrl: item?.coverUrl,
+      isRead: false,
+      bookNodeUrl: item?.bookNodeUrl,
+      seriesUrl: book?.seriesUrl,
+      tomeNb: item?.tomeNb,
     };
 
     try {
@@ -216,8 +218,8 @@ export default function BookDetail() {
       </Container>
     );
 
-  const citations = book.citations ? JSON.parse(book.citations) : [];
-  const smut = book.smut ? JSON.parse(book.smut) : [];
+  const citations = book.citations ? book.citations : [];
+  const smut = book.smut ? book.smut : [];
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -449,22 +451,26 @@ export default function BookDetail() {
           </Typography>
 
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {citations.map((c, i) => (
-              <Paper
-                key={i}
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 3,
-                  border: "1px solid #F2F2F2",
-                  background: "#FAFAFA",
-                }}
-              >
-                <Typography fontStyle="italic" color="#444">
-                  “{c}”
-                </Typography>
-              </Paper>
-            ))}
+            {citations && Array.isArray(citations) ? (
+              citations.map((c, i) => (
+                <Paper
+                  key={i}
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    borderRadius: 3,
+                    border: "1px solid #F2F2F2",
+                    background: "#FAFAFA",
+                  }}
+                >
+                  <Typography fontStyle="italic" color="#444">
+                    “{c}”
+                  </Typography>
+                </Paper>
+              ))
+            ) : (
+              <Typography>Aucune citation disponible.</Typography>
+            )}
           </Box>
         </Paper>
       )}
@@ -487,22 +493,26 @@ export default function BookDetail() {
           </Typography>
 
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {smut.map((c, i) => (
-              <Paper
-                key={i}
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 3,
-                  border: "1px solid #F2F2F2",
-                  background: "#FAFAFA",
-                }}
-              >
-                <Typography fontStyle="italic" color="#444">
-                  “{c}”
-                </Typography>
-              </Paper>
-            ))}
+            {smut && Array.isArray(smut) ? (
+              smut.map((c, i) => (
+                <Paper
+                  key={i}
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    borderRadius: 3,
+                    border: "1px solid #F2F2F2",
+                    background: "#FAFAFA",
+                  }}
+                >
+                  <Typography fontStyle="italic" color="#444">
+                    “{c}”
+                  </Typography>
+                </Paper>
+              ))
+            ) : (
+              <Typography>Aucune citation disponible.</Typography>
+            )}
           </Box>
         </Paper>
       )}
@@ -534,9 +544,15 @@ export default function BookDetail() {
                 <ListItem
                   key={i}
                   sx={{
-                    borderRadius: 3,
-                    mb: 1,
-                    border: "1px solid #EEE",
+                    borderRadius: 4,
+                    mb: 2,
+                    p: 2,
+                    border: "1px solid #E5E5E5",
+                    background: "#FAFAFA",
+                    boxShadow: "0 3px 12px rgba(0,0,0,0.05)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
                   }}
                   secondaryAction={
                     <Button
@@ -546,6 +562,9 @@ export default function BookDetail() {
                         borderRadius: 3,
                         background: "#111",
                         textTransform: "none",
+                        px: 2.5,
+                        py: 1,
+                        fontWeight: 500,
                         "&:hover": { background: "#000" },
                       }}
                     >
@@ -553,28 +572,39 @@ export default function BookDetail() {
                     </Button>
                   }
                 >
-                  <ListItemAvatar>
-                    <Avatar
-                      sx={{
-                        bgcolor: "#EEE",
-                        color: "#555",
-                      }}
-                    >
-                      {s.cover_i ? (
-                        <img
-                          src={`https://covers.openlibrary.org/b/id/${s.cover_i}-S.jpg`}
-                          alt=""
-                        />
-                      ) : (
-                        <MenuBookIcon fontSize="small" />
-                      )}
-                    </Avatar>
-                  </ListItemAvatar>
+                  <Avatar
+                    variant="rounded"
+                    sx={{
+                      width: 56,
+                      height: 80,
+                      borderRadius: 2,
+                      bgcolor: "#EEE",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {s.coverUrl ? (
+                      <img
+                        src={s.coverUrl}
+                        alt={s.title}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <MenuBookIcon fontSize="small" style={{ opacity: 0.4 }} />
+                    )}
+                  </Avatar>
 
-                  <ListItemText
-                    primary={s.title}
-                    secondary={s.author_name?.[0]}
-                  />
+                  <Box sx={{ ml: 1 }}>
+                    <Typography fontWeight={600}>{s.title}</Typography>
+                    {s.tomeNb && (
+                      <Typography fontSize="0.85rem" color="gray">
+                        Tome {s.tomeNb}
+                      </Typography>
+                    )}
+                  </Box>
                 </ListItem>
               ))}
             </List>
