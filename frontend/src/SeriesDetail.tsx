@@ -61,7 +61,7 @@ interface Series {
   createdAt: string;
 }
 
-const API_URL = "http://localhost:4000/api";
+const API_URL = "https://suivilivres.onrender.com/api";
 
 export default function SeriesDetail() {
   const { id } = useParams<{ id: string }>();

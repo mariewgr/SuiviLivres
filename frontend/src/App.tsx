@@ -96,7 +96,7 @@ interface SeriesWithCount {
   };
 }
 
-const API_URL = "http://localhost:4000/api";
+const API_URL = "https://suivilivres.onrender.com/api";
 
 function BookList() {
   const navigate = useNavigate();
