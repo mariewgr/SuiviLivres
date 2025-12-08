@@ -990,7 +990,7 @@ function BookList() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/SuiviLivres">
       <Routes>
         <Route path="/" element={<BookList />} />
         <Route path="/book/:id" element={<BookDetail />} />
