@@ -1,4 +1,3 @@
-import puppeteer from "puppeteer-core";
 import { chromium } from "playwright";
 
 /**
@@ -37,34 +36,33 @@ export function extractVolumeFromTitle(title) {
   return { cleanTitle: title, volume: null };
 }
 
-
+/**
+ * Recherche Booknode à partir d’une requête texte
+ * @param {string} query
+ * @returns {Promise<Array>} Liste de livres : { title, url, cover }
+ */
 export async function searchBooknode(query) {
-  const searchUrl = `https://booknode.com/search?q=${encodeURIComponent(query)}&items_per_page=50&type=book`;
-
-const browser = await chromium.launch({
-  args: ["--no-sandbox", "--disable-setuid-sandbox"],
-});
+  
+  // Lancement du navigateur Playwright (100% compatible Render)
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu"
+    ]
+  });
 
   const page = await browser.newPage();
 
-  await page.setUserAgent(
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  // Charger la page de recherche Booknode
+  await page.goto(
+    `https://booknode.com/search?words=${encodeURIComponent(query)}`,
+    { waitUntil: "domcontentloaded" }
   );
 
-  await page.setExtraHTTPHeaders({
-    "Accept-Language": "fr-FR,fr;q=0.9"
-  });
-
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-  });
-
-  console.log("Loading Booknode page…");
-  await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 60000 });
-
-  await page.waitForSelector(".result-book", { timeout: 30000 });
-
-  const results = await page.evaluate(() => {
+   const results = await page.evaluate(() => {
   return [...document.querySelectorAll(".list-group-item.result-book")].map((el) => {
     const titleEl = el.querySelector(".book-name a");
     const authorEl = el.querySelector(".authors .author");
@@ -82,42 +80,25 @@ const browser = await chromium.launch({
   });
 });
 
-
   await browser.close();
   return results;
 }
 
 export async function getBookDetails(url) {
-  const browser = await puppeteer.launch({
-    headless: false,
+  const browser = await chromium.launch({
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
-      "--disable-blink-features=AutomationControlled"
-    ],
-    defaultViewport: null
+      "--disable-gpu"
+    ]
   });
 
   const page = await browser.newPage();
 
-  await page.setUserAgent(
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  );
-
-  await page.setExtraHTTPHeaders({
-    "Accept-Language": "fr-FR,fr;q=0.9"
-  });
-
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-  });
-
-  console.log("Loading book details page...");
-  await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-
-  // Wait for main content to load
-  await page.waitForSelector("h1", { timeout: 30000 });
+  // Charger la page de recherche Booknode
+  await page.goto(url,{ waitUntil: "domcontentloaded" });
 
   const details = await page.evaluate(() => {
     // Title
@@ -202,33 +183,19 @@ export async function getBookDetails(url) {
 }
 
 export async function getBookSequels(url) {
-  const browser = await puppeteer.launch({
-    headless: false,
+  const browser = await chromium.launch({
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
-      "--disable-blink-features=AutomationControlled"
-    ],
-    defaultViewport: null
+      "--disable-gpu"
+    ]
   });
 
   const page = await browser.newPage();
 
-  await page.setUserAgent(
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  );
-
-  await page.setExtraHTTPHeaders({
-    "Accept-Language": "fr-FR,fr;q=0.9"
-  });
-
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-  });
-
-  console.log("Loading book details page...");
-  await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+  await page.goto(url, { waitUntil: "domcontentloaded"});
 
   // Wait for main content to load
   await page.waitForSelector("h1", { timeout: 30000 });
