@@ -1,4 +1,4 @@
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 
 /**
  * Extracts volume number from title and returns cleaned title
@@ -40,16 +40,16 @@ export function extractVolumeFromTitle(title) {
 export async function searchBooknode(query) {
   const searchUrl = `https://booknode.com/search?q=${encodeURIComponent(query)}&items_per_page=50&type=book`;
 
-  const browser = await puppeteer.launch({
-    headless: false,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-blink-features=AutomationControlled"
-    ],
-    defaultViewport: null
-  });
+const browser = await puppeteer.launch({
+  headless: true,
+  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+  ],
+});
 
   const page = await browser.newPage();
 
