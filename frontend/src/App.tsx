@@ -23,11 +23,9 @@ import {
   CardMedia,
   CardContent,
   CircularProgress,
-  Chip,
   IconButton,
   Tabs,
   Tab,
-  Badge,
   ListItem,
   ListItemButton,
   ListItemText,
@@ -40,7 +38,6 @@ import {
 
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
-import MenuBookIcon from "@mui/icons-material/MenuBook";
 import AddIcon from "@mui/icons-material/Add";
 import ChronologicalTab from "./ChronologocalTab";
 
@@ -66,9 +63,8 @@ interface Book {
   smut?: string[];
   author: Author;
   series?: Series;
-  bookNodeUrl?: string;
-  seriesUrl?: string;
   tomeNb?: number;
+  googleBooksId?: string;
 }
 
 interface PendingBook {
@@ -86,6 +82,8 @@ interface ScrapedBook {
   isbn?: string[];
   series?: string[];
   link: string;
+  googleBooksId?: string;
+  tomeNb?: string;
 }
 
 interface SeriesWithCount {
@@ -113,8 +111,6 @@ function BookList() {
     smut: "",
     tomeNb: -1,
     coverUrl: "",
-    bookNodeUrl: "",
-    seriesUrl: "",
   });
 
   const [pendingBook, setPendingBook] = useState<PendingBook | null>(null);
@@ -158,7 +154,8 @@ function BookList() {
               const q = searchBook.toLowerCase();
               return (
                 b.title.toLowerCase().includes(q) ||
-                b.author.name.toLowerCase().includes(q)
+                b.author.name.toLowerCase().includes(q) ||
+                b.series?.title.toLowerCase().includes(q)
               );
             });
 
@@ -206,8 +203,9 @@ function BookList() {
     setSearching(true);
     try {
       const response = await fetch(
-        `${API_URL}/booknode/search?q=${encodeURIComponent(searchQuery)}`
+        `${API_URL}/googlebooks/search?q=${encodeURIComponent(searchQuery)}`
       );
+
       const data = await response.json();
       setSearchResults(data);
     } finally {
@@ -218,21 +216,21 @@ function BookList() {
   const handleSelectBook = async (book: ScrapedBook) => {
     try {
       const details = await fetch(
-        `${API_URL}/booknode/details?url=${encodeURIComponent(book.link)}`
+        `${API_URL}/googlebooks/details?id=${encodeURIComponent(
+          book.googleBooksId || book.key
+        )}`
       ).then((r) => r.json());
 
       setForm({
         title: details.title || book.title,
-        authorName: book.author_name ? book.author_name[0] : "",
-        seriesTitle: book.series?.[0] || "",
-        summary: details.description,
+        authorName: details.author_name?.[0] || book.author_name?.[0] || "",
+        seriesTitle: "", // Google Books n'a pas de séries structurées
+        summary: details.description || "",
         rating: "",
         citations: "",
         smut: "",
-        seriesUrl: details.seriesUrl,
-        tomeNb: details.volume || -1,
-        coverUrl: book.cover || "",
-        bookNodeUrl: book.link,
+        tomeNb: details.tomeNb,
+        coverUrl: details.cover || book.cover || "",
       });
 
       setSearchDialogOpen(false);
@@ -283,8 +281,6 @@ function BookList() {
       smut: "",
       tomeNb: -1,
       coverUrl: "",
-      seriesUrl: "",
-      bookNodeUrl: "",
     });
 
     setNewCollectionName("");

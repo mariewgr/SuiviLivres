@@ -1,8 +1,7 @@
-const { searchGoogleBooks, getGoogleBookDetails } = require("./utils/googlebooks.js");
+const { searchBooknode, getBookDetails, getBookSequels } = require("./booknode.js");
 const express = require("express");
 const cors = require("cors");
 const { PrismaClient } = require("@prisma/client");
-
 
 // Use native fetch for Node 18+, or import node-fetch for older versions
 const fetch = globalThis.fetch || require("node-fetch");
@@ -10,50 +9,17 @@ const fetch = globalThis.fetch || require("node-fetch");
 const app = express();
 const prisma = new PrismaClient();
 
-// Google Books API configuration
-const GOOGLE_BOOKS_API_KEY = process.env.GOOGLE_BOOKS_API_KEY || "";
-const GOOGLE_BOOKS_BASE_URL = "https://www.googleapis.com/books/v1/volumes";
+app.use(
+  cors({
+    origin: "https://mariewgr.github.io",
+  })
+);
 
-// app.use(
-//   cors({
-//     origin: "https://mariewgr.github.io",
-//   })
-// );
-
-app.use(cors());
 
 app.use(express.json());
 
 // Route test
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
-
-// ==================== GOOGLE BOOKS API ROUTES ====================
-
-app.get("/api/googlebooks/search", async (req, res) => {
-  try {
-    const q = req.query.q;
-    if (!q) return res.json([]);
-    const results = await searchGoogleBooks(q);
-    res.json(results);
-  } catch (err) {
-    console.error("Search Google Books error:", err);
-    res.status(500).json({ error: "API call failed" });
-  }
-});
-
-app.get("/api/googlebooks/details", async (req, res) => {
-  try {
-    const id = req.query.id;
-    if (!id) return res.json({});
-    const details = await getGoogleBookDetails(id);
-    res.json(details);
-  } catch (err) {
-    console.error("Details Google Books error:", err);
-    res.status(500).json({ error: "API call failed" });
-  }
-});
-
-// ==================== DATABASE ROUTES ====================
 
 // GET all books
 app.get("/api/books", async (req, res) => {
@@ -69,6 +35,45 @@ app.get("/api/books", async (req, res) => {
     console.error("❌ Error fetching books:", error);
     console.error("Stack:", error.stack);
     res.status(500).json({ error: "Failed to fetch books", details: error.message });
+  }
+});
+
+app.get("/api/booknode/search", async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.json([]);
+
+    const results = await searchBooknode(q);
+    res.json(results);
+  } catch (err) {
+    console.error("Search Booknode error:", err);
+    res.status(500).json({ error: "Scraping failed" });
+  }
+});
+
+app.get("/api/booknode/details", async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url) return res.json({});
+
+    const details = await getBookDetails(url);
+    res.json(details);
+  } catch (err) {
+    console.error("Details Booknode error:", err);
+    res.status(500).json({ error: "Scraping failed" });
+  }
+});
+
+app.get("/api/booknode/series", async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url) return res.json({});
+
+    const books = await getBookSequels(url);
+    res.json(books);
+  } catch (err) {
+    console.error("Details Booknode error:", err);
+    res.status(500).json({ error: "Scraping failed" });
   }
 });
 
@@ -89,10 +94,10 @@ app.get("/api/books/:id", async (req, res) => {
   }
 });
 
-// POST new book
+// POST new book with automatic cover & next series
 app.post("/api/books", async (req, res) => {
   try {
-    const { title, authorName, seriesTitle, summary, rating, readDate, citations, smut, tomeNb, coverUrl, bookNodeUrl, seriesUrl, googleBooksId } = req.body;
+    const { title, authorName, seriesTitle, summary, rating, readDate, citations, smut , tomeNb, coverUrl, bookNodeUrl, seriesUrl} = req.body;
 
     // Validation
     if (!title || !authorName) {
@@ -116,7 +121,7 @@ app.post("/api/books", async (req, res) => {
       });
     }
 
-    // 3️⃣ Créer le livre
+    // 4️⃣ Créer le livre
     const book = await prisma.book.create({
       data: {
         title,
@@ -126,19 +131,19 @@ app.post("/api/books", async (req, res) => {
         coverUrl,
         bookNodeUrl,
         seriesUrl,
-        googleBooksId: googleBooksId || null,
         rating: rating ? parseInt(rating) : null,
         readDate: readDate ? new Date(readDate) : null,
         citations: citations ? (typeof citations === 'string' ? citations : JSON.stringify(citations)) : null,
         smut: smut ? (typeof smut === 'string' ? smut : JSON.stringify(smut)) : null,
-        isRead: false,
-        tomeNb: tomeNb ? parseFloat(tomeNb) : null,
+        isRead: false, // Default to not read
+        tomeNb: tomeNb != -1 ? parseFloat(tomeNb) : tomeNb_searched,
       },
       include: { author: true, series: true },
     });
 
+    // 5️⃣ Renvoyer livre + suite détectée
     res.status(201).json({ book });
-    console.log("Book created:", title);
+    console.error("Book created:", title);
   } catch (error) {
     console.error("Error creating book:", error);
     res.status(500).json({ error: "Failed to create book", details: error.message });
@@ -149,7 +154,7 @@ app.post("/api/books", async (req, res) => {
 app.put("/api/books/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, authorName, seriesTitle, summary, rating, readDate, citations, smut, coverUrl, seriesUrl, bookNodeUrl, isRead, tomeNb, googleBooksId } = req.body;
+    const { title, authorName, seriesTitle, summary, rating, readDate, citations, smut, coverUrl, seriesUrl, bookNodeUrl, isRead, tomeNb } = req.body;
 
     // Handle author update/creation
     let authorId;
@@ -183,10 +188,9 @@ app.put("/api/books/:id", async (req, res) => {
         ...(coverUrl !== undefined && { coverUrl }),
         ...(bookNodeUrl !== undefined && { bookNodeUrl }),
         ...(seriesUrl !== undefined && { seriesUrl }),
-        ...(googleBooksId !== undefined && { googleBooksId }),
         ...(rating !== undefined && { rating: rating ? parseInt(rating) : null }),
         ...(readDate !== undefined && { readDate: readDate ? new Date(readDate) : null }),
-        ...(tomeNb !== undefined && { tomeNb: parseFloat(tomeNb) }),
+        ...(tomeNb !== undefined && { tomeNb : parseFloat(tomeNb) }),
         ...(isRead !== undefined && { isRead }),
         ...(citations !== undefined && { 
           citations: citations ? (typeof citations === 'string' ? citations : JSON.stringify(citations)) : null 
@@ -274,20 +278,21 @@ app.get("/api/series/:id", async (req, res) => {
   }
 });
 
-app.put('/api/series/:id', async (req, res) => {
-  const { title } = req.body;
-  const updated = await prisma.series.update({
-    where: { id: parseInt(req.params.id) },
-    data: { title },
-  });
-  res.json(updated);
+app.put('/api/series/:id', async (req,res)=>{
+const { title } = req.body;
+const updated = await prisma.series.update({
+where:{ id: parseInt(req.params.id)},
+data:{ title },
+});
+res.json(updated);
 });
 
-app.delete('/api/series/:id', async (req, res) => {
-  await prisma.book.updateMany({ where: { seriesId: parseInt(req.params.id) }, data: { seriesId: null } });
-  await prisma.series.delete({ where: { id: parseInt(req.params.id) } });
-  res.json({ message: 'Series deleted' });
+app.delete('/api/series/:id', async (req,res)=>{
+await prisma.book.updateMany({ where:{ seriesId: parseInt(req.params.id)}, data:{ seriesId:null }});
+await prisma.series.delete({ where:{ id: parseInt(req.params.id)} });
+res.json({ message:'Series deleted' });
 });
+
 
 // Graceful shutdown
 process.on("SIGINT", async () => {

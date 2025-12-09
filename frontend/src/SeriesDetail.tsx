@@ -221,15 +221,20 @@ export default function SeriesDetail() {
   const onDragEnd = async (result) => {
     if (!result.destination) return;
 
-    const items = Array.from(series?.books).sort(
-      (a, b) => (a.tomeNb || 999) - (b.tomeNb || 999)
-    );
+    var items = Array<Book>();
+    items = series
+      ? Array.from(series.books).sort(
+          (a, b) => (a.tomeNb || 999) - (b.tomeNb || 999)
+        )
+      : [];
     const [moved] = items.splice(result.source.index, 1);
     items.splice(result.destination.index, 0, moved);
 
     const updated = items.map((b, i) => ({ ...b, tomeNb: i + 1 }));
 
-    setSeries({ ...series, books: updated });
+    if (series) {
+      setSeries({ ...series, books: updated });
+    }
 
     for (const b of updated) {
       await fetch(`${API_URL}/books/${b.id}`, {

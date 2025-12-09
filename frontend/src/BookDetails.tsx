@@ -52,8 +52,6 @@ interface Book {
   smut?: string[];
   author: Author;
   series?: Series;
-  bookNodeUrl?: string;
-  seriesUrl?: string;
   tomeNb?: number;
 }
 
@@ -144,28 +142,27 @@ export default function BookDetail() {
   };
 
   const findSequels = async () => {
-    if (!book) return;
-    setSearching(true);
-    try {
-      var books = Array<Book>();
-      if (book.seriesUrl) {
-        books = await fetch(
-          `${API_URL}/booknode/series?url=${encodeURIComponent(book.seriesUrl)}`
-        ).then((r) => r.json());
-      }
-      const missing = books.filter((b) => {
-        if (!b.title || !book.author) return false;
-        const titleLower = b.title.toLowerCase();
-        if (titleLower === book.title.toLowerCase()) return false;
-        return true;
-      });
-
-      setSequels(missing);
-      console.log(missing);
-      setOpenDialog(true);
-    } finally {
-      setSearching(false);
-    }
+    // if (!book) return;
+    // setSearching(true);
+    // try {
+    //   var books = Array<Book>();
+    //   if (book.seriesUrl) {
+    //     books = await fetch(
+    //       `${API_URL}/booknode/series?url=${encodeURIComponent(book.seriesUrl)}`
+    //     ).then((r) => r.json());
+    //   }
+    //   const missing = books.filter((b) => {
+    //     if (!b.title || !book.author) return false;
+    //     const titleLower = b.title.toLowerCase();
+    //     if (titleLower === book.title.toLowerCase()) return false;
+    //     return true;
+    //   });
+    //   setSequels(missing);
+    //   console.log(missing);
+    //   setOpenDialog(true);
+    // } finally {
+    //   setSearching(false);
+    // }
   };
 
   const addBook = async (item) => {
@@ -180,8 +177,6 @@ export default function BookDetail() {
       smut: [],
       coverUrl: item?.coverUrl,
       isRead: false,
-      bookNodeUrl: item?.bookNodeUrl,
-      seriesUrl: book?.seriesUrl,
       tomeNb: item?.tomeNb,
     };
 

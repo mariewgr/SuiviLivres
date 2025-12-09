@@ -45,6 +45,7 @@ model Book {
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  googleBooksId String?
 
   @@index([authorId])
   @@index([seriesId])

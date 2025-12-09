@@ -168,7 +168,7 @@ export default function BookEdit() {
       finalSeriesTitle = newCollectionName.trim();
     }
 
-    let citationsArray = [];
+    let citationsArray = Array<string>();
     if (form.citations.trim()) {
       citationsArray = form.citations
         .split(";")
@@ -176,7 +176,7 @@ export default function BookEdit() {
         .filter((c) => c.length > 0);
     }
 
-    let smutArray = [];
+    let smutArray = Array<string>();
     if (form.smut.trim()) {
       smutArray = form.smut
         .split(";")
