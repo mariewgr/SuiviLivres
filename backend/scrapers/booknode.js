@@ -1,4 +1,5 @@
 import puppeteer from "puppeteer-core";
+import { chromium } from "playwright";
 
 /**
  * Extracts volume number from title and returns cleaned title
@@ -40,15 +41,8 @@ export function extractVolumeFromTitle(title) {
 export async function searchBooknode(query) {
   const searchUrl = `https://booknode.com/search?q=${encodeURIComponent(query)}&items_per_page=50&type=book`;
 
-const browser = await puppeteer.launch({
-  headless: true,
-  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-gpu",
-    "--disable-dev-shm-usage",
-  ],
+const browser = await chromium.launch({
+  args: ["--no-sandbox", "--disable-setuid-sandbox"],
 });
 
   const page = await browser.newPage();
