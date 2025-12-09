@@ -3,24 +3,14 @@ const express = require("express");
 const cors = require("cors");
 const { PrismaClient } = require("@prisma/client");
 
-
-// Use native fetch for Node 18+, or import node-fetch for older versions
-const fetch = globalThis.fetch || require("node-fetch");
-
 const app = express();
 const prisma = new PrismaClient();
 
-// Google Books API configuration
-const GOOGLE_BOOKS_API_KEY = process.env.GOOGLE_BOOKS_API_KEY || "";
-const GOOGLE_BOOKS_BASE_URL = "https://www.googleapis.com/books/v1/volumes";
-
-// app.use(
-//   cors({
-//     origin: "https://mariewgr.github.io",
-//   })
-// );
-
-app.use(cors());
+app.use(
+  cors({
+    origin: "https://mariewgr.github.io",
+  })
+);
 
 app.use(express.json());
 
