@@ -20,30 +20,7 @@ import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import IconButton from "@mui/material/IconButton";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-
-interface Author {
-  id: number;
-  name: string;
-}
-
-interface Series {
-  id: number;
-  title: string;
-}
-
-interface Book {
-  id: number;
-  title: string;
-  summary?: string;
-  rating?: number;
-  coverUrl?: string;
-  citations?: string[];
-  isRead?: boolean;
-  readDate?: string;
-  smut?: string[];
-  author: Author;
-  series?: Series;
-}
+import { Book } from "./App";
 
 interface ChronologicalTabProps {
   books: Book[];
@@ -228,7 +205,7 @@ export default function ChronologicalTab({ books }: ChronologicalTabProps) {
                           color="text.secondary"
                           sx={{ mb: 1 }}
                         >
-                          {book.author.name}
+                          {book.author ? book.author.name : "Auteur inconnu"}
                         </Typography>
 
                         {book.series && (
@@ -391,7 +368,7 @@ export default function ChronologicalTab({ books }: ChronologicalTabProps) {
                   color="text.secondary"
                   sx={{ mb: 1 }}
                 >
-                  {book.author.name}
+                  {book.author ? book.author.name : "Auteur inconnu"}
                 </Typography>
 
                 <Box

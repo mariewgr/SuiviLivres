@@ -51,19 +51,19 @@ interface Series {
   title: string;
 }
 
-interface Book {
+export interface Book {
   id: number;
   title: string;
-  summary?: string;
-  rating?: number;
-  coverUrl?: string;
-  citations?: string[];
-  isRead?: boolean;
+  summary: string;
+  rating: number;
+  coverUrl: string;
+  citations: string[];
+  isRead: boolean;
   readDate?: string;
-  smut?: string[];
+  smut: string[];
   author: Author;
-  series?: Series;
-  tomeNb?: number;
+  series: Series;
+  tomeNb: number;
   googleBooksId?: string;
 }
 
@@ -75,15 +75,14 @@ interface PendingBook {
 interface ScrapedBook {
   key: string;
   title: string;
-  author_name?: string[];
-  description?: string;
-  cover?: string;
+  author_name: string[];
+  description: string;
+  cover: string;
   first_publish_year?: number;
   isbn?: string[];
-  series?: string[];
   link: string;
-  googleBooksId?: string;
-  tomeNb?: string;
+  googleBooksId: string;
+  tomeNb: string;
 }
 
 interface SeriesWithCount {
@@ -101,16 +100,19 @@ function BookList() {
   const [series, setSeries] = useState<SeriesWithCount[]>([]);
   const [currentTab, setCurrentTab] = useState(0);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<Book>({
+    id: -1,
     title: "",
-    authorName: "",
-    seriesTitle: "",
+    author: { id: 0, name: "" },
+    series: { id: 0, title: "" },
     summary: "",
-    rating: "",
-    citations: "",
-    smut: "",
-    tomeNb: -1,
+    rating: 0,
     coverUrl: "",
+    citations: [],
+    smut: [],
+    tomeNb: -1,
+    isRead: false,
+    readDate: "",
   });
 
   const [pendingBook, setPendingBook] = useState<PendingBook | null>(null);
@@ -153,8 +155,8 @@ function BookList() {
           : allBooks.filter((b: Book) => {
               const q = searchBook.toLowerCase();
               return (
-                b.title.toLowerCase().includes(q) ||
-                b.author.name.toLowerCase().includes(q) ||
+                (b.title && b.title.toLowerCase().includes(q)) ||
+                (b.author && b.author.name.toLowerCase().includes(q)) ||
                 b.series?.title.toLowerCase().includes(q)
               );
             });
@@ -214,51 +216,37 @@ function BookList() {
   };
 
   const handleSelectBook = async (book: ScrapedBook) => {
-    // try {
-    //   const details = await fetch(
-    //     `${API_URL}/googlebooks/details?id=${encodeURIComponent(
-    //       book.googleBooksId || book.key
-    //     )}`
-    //   ).then((r) => r.json());
-
     setForm({
+      id: -1,
+      googleBooksId: book.googleBooksId,
       title: book.title,
-      authorName: book.author_name?.[0] || "",
-      seriesTitle: "", // Google Books n'a pas de séries structurées
+      author: { id: 0, name: book.author_name?.[0] || "" },
+      series: { id: 0, title: "" }, // Google Books n'a pas de séries structurées
       summary: book.description || "",
-      rating: "",
-      citations: "",
-      smut: "",
+      rating: 0,
+      citations: [],
+      smut: [],
       tomeNb: parseFloat(book.tomeNb || "-1"),
       coverUrl: book.cover || "",
+      isRead: false,
     });
 
     setSearchDialogOpen(false);
     setSearchQuery("");
     setSearchResults([]);
-    // } catch (e) {
-    //   console.log(e);
-    // }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (newCollectionName !== "" && form.seriesTitle === "__new__") {
-      form.seriesTitle = newCollectionName;
+    if (newCollectionName !== "" && form?.series?.title === "__new__") {
+      form.series.title = newCollectionName;
     }
-
-    const payload = {
-      ...form,
-      rating: form.rating ? parseInt(form.rating) : null,
-      citations: form.citations ? form.citations.split(";") : [],
-      smut: form.smut ? form.smut.split(";") : [],
-    };
 
     const res = await fetch(`${API_URL}/books`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(form),
     });
 
     const data = await res.json();
@@ -272,15 +260,17 @@ function BookList() {
     }
 
     setForm({
+      id: -1,
       title: "",
-      authorName: "",
-      seriesTitle: "",
+      author: { id: 0, name: "" },
+      series: { id: 0, title: "" },
       summary: "",
-      rating: "",
-      citations: "",
-      smut: "",
+      rating: 0,
+      citations: [],
+      smut: [],
       tomeNb: -1,
       coverUrl: "",
+      isRead: false,
     });
 
     setNewCollectionName("");
@@ -317,7 +307,10 @@ function BookList() {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setForm({
+      ...form,
+      [e.target.name]: e.target.value,
+    });
   };
 
   const handleBookClick = (id: number) => {
@@ -398,7 +391,7 @@ function BookList() {
                     fullWidth
                     label="Titre"
                     name="title"
-                    value={form.title}
+                    value={form?.title}
                     onChange={handleChange}
                     sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                   />
@@ -409,7 +402,7 @@ function BookList() {
                     fullWidth
                     label="Auteur"
                     name="authorName"
-                    value={form.authorName}
+                    value={form?.author ? form?.author.name : ""}
                     onChange={handleChange}
                     sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                   />
@@ -419,10 +412,14 @@ function BookList() {
                   <FormControl fullWidth>
                     <InputLabel>Série (optionnel)</InputLabel>
                     <Select
-                      value={form.seriesTitle}
+                      value={form?.series?.title}
                       label="Série (optionnel)"
                       onChange={(e) =>
-                        setForm({ ...form, seriesTitle: e.target.value })
+                        setForm({
+                          ...form,
+                          id: 0,
+                          series: { id: 0, title: e.target.value },
+                        })
                       }
                       sx={{ borderRadius: 3 }}
                     >
@@ -442,7 +439,7 @@ function BookList() {
                     </Select>
                   </FormControl>
 
-                  {form.seriesTitle === "__new__" && (
+                  {form?.series?.title === "__new__" && (
                     <TextField
                       fullWidth
                       label="Nom de la nouvelle série"
@@ -461,7 +458,7 @@ function BookList() {
                     fullWidth
                     label="Résumé"
                     name="summary"
-                    value={form.summary}
+                    value={form?.summary}
                     multiline
                     rows={3}
                     onChange={handleChange}
@@ -474,9 +471,9 @@ function BookList() {
                     Note
                   </Typography>
                   <Rating
-                    value={form.rating ? parseInt(form.rating) : 0}
+                    value={form?.rating ? form.rating : 0}
                     onChange={(e, v) =>
-                      setForm({ ...form, rating: v ? v.toString() : "" })
+                      setForm({ ...form, id: 0, rating: v ? v : 0 })
                     }
                   />
                 </Grid>
@@ -486,7 +483,7 @@ function BookList() {
                     fullWidth
                     label="Numéro du tome"
                     name="tomeNb"
-                    value={form.tomeNb}
+                    value={form?.tomeNb}
                     onChange={handleChange}
                     sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                   />
@@ -497,7 +494,7 @@ function BookList() {
                     fullWidth
                     label="Citations (séparées par ; )"
                     name="citations"
-                    value={form.citations}
+                    value={form?.citations}
                     onChange={handleChange}
                     sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                   />
@@ -508,7 +505,7 @@ function BookList() {
                     fullWidth
                     label="Chapitres Smut (séparés par ; )"
                     name="smut"
-                    value={form.smut}
+                    value={form?.smut}
                     onChange={handleChange}
                     sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
                   />
@@ -617,7 +614,7 @@ function BookList() {
                                   variant="body2"
                                   color="text.secondary"
                                 >
-                                  {b.author.name}
+                                  {b?.author ? b.author.name : ""}
                                 </Typography>
                               </Box>
                             </Box>
@@ -738,7 +735,7 @@ function BookList() {
                                 variant="body2"
                                 color="text.secondary"
                               >
-                                {b.author.name}
+                                {b.author ? b.author.name : ""}
                               </Typography>
                             </Box>
                           </Box>

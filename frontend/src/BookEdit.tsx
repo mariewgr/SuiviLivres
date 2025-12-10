@@ -19,31 +19,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SaveIcon from "@mui/icons-material/Save";
 import { API_URL } from "./api";
-interface Author {
-  id: number;
-  name: string;
-}
-
-interface Series {
-  id: number;
-  title: string;
-}
-
-interface Book {
-  id: number;
-  title: string;
-  author: Author;
-  series?: Series | null;
-  summary?: string | null;
-  coverUrl?: string | null;
-  rating?: number | null;
-  readDate?: string | null;
-  citations?: string | null;
-  smut?: string | null;
-  isRead?: boolean;
-  tomeNb?: number | null;
-  createdAt: string;
-}
+import { Book } from "./App";
 
 interface SeriesOption {
   id: number;
@@ -59,18 +35,20 @@ export default function BookEdit() {
   const [allSeries, setAllSeries] = useState<SeriesOption[]>([]);
   const [newCollectionName, setNewCollectionName] = useState("");
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<Book>({
     title: "",
-    authorName: "",
-    seriesTitle: "",
+    author: { id: 0, name: "" },
+    series: { id: 0, title: "" },
     summary: "",
-    rating: "",
+    rating: 0,
     readDate: "",
-    citations: "",
-    smut: "",
+    citations: [],
+    smut: [],
     isRead: false,
     tomeNb: -1,
     coverUrl: "",
+    googleBooksId: "",
+    id: -1,
   });
 
   useEffect(() => {
@@ -87,26 +65,6 @@ export default function BookEdit() {
       }
       const book: Book = await response.json();
 
-      let citationsString = "";
-      if (book.citations) {
-        try {
-          const citationsArray = JSON.parse(book.citations);
-          citationsString = citationsArray.join("; ");
-        } catch {
-          citationsString = book.citations;
-        }
-      }
-
-      let smutString = "";
-      if (book.smut) {
-        try {
-          const smutArray = JSON.parse(book.smut);
-          smutString = smutArray.join("; ");
-        } catch {
-          smutString = book.smut;
-        }
-      }
-
       let formattedDate = "";
       if (book.readDate) {
         const date = new Date(book.readDate);
@@ -115,16 +73,18 @@ export default function BookEdit() {
 
       setForm({
         title: book.title || "",
-        authorName: book.author?.name || "",
-        seriesTitle: book.series?.title || "",
+        author: { id: 0, name: book.author?.name || "" },
+        series: { id: 0, title: book.series?.title || "" },
         summary: book.summary || "",
-        rating: book.rating?.toString() || "",
+        rating: book.rating,
         readDate: formattedDate,
-        citations: citationsString,
-        smut: smutString,
+        citations: book.citations,
+        smut: book.smut,
         coverUrl: book.coverUrl || "",
         isRead: book.isRead || false,
         tomeNb: book.tomeNb || -1,
+        googleBooksId: book.googleBooksId || "",
+        id: book.id,
       });
       setError(null);
     } catch (err) {
@@ -155,7 +115,7 @@ export default function BookEdit() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!form.title.trim() || !form.authorName.trim()) {
+    if (!form.title.trim() || !form.author.name.trim()) {
       setError("Le titre et l'auteur sont obligatoires");
       return;
     }
@@ -163,46 +123,15 @@ export default function BookEdit() {
     setSaving(true);
     setError(null);
 
-    let finalSeriesTitle = form.seriesTitle;
-    if (form.seriesTitle === "__new__" && newCollectionName.trim()) {
-      finalSeriesTitle = newCollectionName.trim();
+    if (form.series.title === "__new__" && newCollectionName.trim()) {
+      form.series.title = newCollectionName.trim();
     }
-
-    let citationsArray = Array<string>();
-    if (form.citations.trim()) {
-      citationsArray = form.citations
-        .split(";")
-        .map((c) => c.trim())
-        .filter((c) => c.length > 0);
-    }
-
-    let smutArray = Array<string>();
-    if (form.smut.trim()) {
-      smutArray = form.smut
-        .split(";")
-        .map((c) => c.trim())
-        .filter((c) => c.length > 0);
-    }
-
-    const payload = {
-      title: form.title.trim(),
-      authorName: form.authorName.trim(),
-      seriesTitle: finalSeriesTitle || null,
-      summary: form.summary.trim() || null,
-      rating: form.rating ? parseInt(form.rating) : null,
-      readDate: form.readDate || null,
-      citations: citationsArray,
-      smut: smutArray,
-      isRead: form.isRead,
-      tomeNb: form.tomeNb,
-      coverUrl: form.coverUrl.trim() || null,
-    };
 
     try {
       const response = await fetch(`${API_URL}/books/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(form),
       });
 
       if (!response.ok) {
@@ -307,13 +236,13 @@ export default function BookEdit() {
                 required
                 label="Auteur"
                 name="authorName"
-                value={form.authorName}
+                value={form.author.name}
                 onChange={handleChange}
                 disabled={saving}
                 sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
-                error={!form.authorName.trim() && form.authorName !== ""}
+                error={!form.author.name.trim() && form.author.name !== ""}
                 helperText={
-                  !form.authorName.trim() && form.authorName !== ""
+                  !form.author.name.trim() && form.author.name !== ""
                     ? "L'auteur est requis"
                     : ""
                 }
@@ -324,10 +253,13 @@ export default function BookEdit() {
               <FormControl fullWidth disabled={saving}>
                 <InputLabel>Série (optionnel)</InputLabel>
                 <Select
-                  value={form.seriesTitle}
+                  value={form.series.title}
                   label="Série (optionnel)"
                   onChange={(e) =>
-                    setForm({ ...form, seriesTitle: e.target.value })
+                    setForm({
+                      ...form,
+                      series: { ...form.series, title: e.target.value },
+                    })
                   }
                   sx={{ borderRadius: 3 }}
                 >
@@ -347,7 +279,7 @@ export default function BookEdit() {
                 </Select>
               </FormControl>
 
-              {form.seriesTitle === "__new__" && (
+              {form.series.title === "__new__" && (
                 <TextField
                   fullWidth
                   label="Nom de la nouvelle série"
@@ -382,10 +314,8 @@ export default function BookEdit() {
                 Note
               </Typography>
               <Rating
-                value={form.rating ? parseInt(form.rating) : 0}
-                onChange={(e, v) =>
-                  setForm({ ...form, rating: v ? v.toString() : "" })
-                }
+                value={form.rating}
+                onChange={(e, v) => setForm({ ...form, rating: v || 0 })}
               />
             </Grid>
 
@@ -434,7 +364,7 @@ export default function BookEdit() {
                 fullWidth
                 label="Citations (séparées par ; )"
                 name="citations"
-                value={form.citations}
+                value={form.citations.length > 0 ? form.citations : ""}
                 onChange={handleChange}
                 disabled={saving}
                 sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
@@ -446,7 +376,7 @@ export default function BookEdit() {
                 fullWidth
                 label="Chapitres Smut (séparés par ; )"
                 name="smut"
-                value={form.smut}
+                value={form.smut.length > 0 ? form.smut : ""}
                 onChange={handleChange}
                 disabled={saving}
                 sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
@@ -486,7 +416,7 @@ export default function BookEdit() {
                     )
                   }
                   disabled={
-                    saving || !form.title.trim() || !form.authorName.trim()
+                    saving || !form.title.trim() || !form.author.name.trim()
                   }
                   sx={{
                     py: 1.4,

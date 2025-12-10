@@ -20,40 +20,13 @@ import {
   DialogTitle,
   List,
   ListItem,
-  ListItemAvatar,
-  ListItemText,
 } from "@mui/material";
 
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
-import Book from "./App";
-
-interface Author {
-  id: number;
-  name: string;
-}
-
-interface Series {
-  id: number;
-  title: string;
-}
-
-interface Book {
-  id: number;
-  title: string;
-  summary?: string;
-  rating?: number;
-  coverUrl?: string;
-  citations?: string[];
-  isRead?: boolean;
-  readDate?: string;
-  smut?: string[];
-  author: Author;
-  series?: Series;
-  tomeNb?: number;
-}
+import { Book } from "./App";
 
 export default function BookDetail() {
   const { id } = useParams<{ id: string }>();
@@ -142,42 +115,65 @@ export default function BookDetail() {
   };
 
   const findSequels = async () => {
-    // if (!book) return;
-    // setSearching(true);
-    // try {
-    //   var books = Array<Book>();
-    //   if (book.seriesUrl) {
-    //     books = await fetch(
-    //       `${API_URL}/booknode/series?url=${encodeURIComponent(book.seriesUrl)}`
-    //     ).then((r) => r.json());
-    //   }
-    //   const missing = books.filter((b) => {
-    //     if (!b.title || !book.author) return false;
-    //     const titleLower = b.title.toLowerCase();
-    //     if (titleLower === book.title.toLowerCase()) return false;
-    //     return true;
-    //   });
-    //   setSequels(missing);
-    //   console.log(missing);
-    //   setOpenDialog(true);
-    // } finally {
-    //   setSearching(false);
-    // }
+    if (!book) return;
+    setSearching(true);
+
+    try {
+      // Utiliser l'API Google Books pour trouver les suites
+      const params = new URLSearchParams({
+        author: book.author.name,
+        title: book.title,
+      });
+
+      // Ajouter le volume si disponible
+      if (book.tomeNb && book.tomeNb !== -1) {
+        params.append("volume", book.tomeNb.toString());
+      }
+
+      const response = await fetch(
+        `${API_URL}/googlebooks/sequels?${params.toString()}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch sequels");
+      }
+
+      const books = await response.json();
+
+      // Filtrer les livres qui ne sont pas déjà dans notre base
+      // (optionnel - vous pouvez aussi vérifier côté serveur)
+      const missing = books.filter((b: any) => {
+        if (!b.title || !book.author) return false;
+        const titleLower = b.title.toLowerCase();
+        if (titleLower === book.title.toLowerCase()) return false;
+        return true;
+      });
+
+      setSequels(missing);
+      setOpenDialog(true);
+    } catch (error) {
+      console.error("Error finding sequels:", error);
+      alert("Erreur lors de la recherche de suites");
+    } finally {
+      setSearching(false);
+    }
   };
 
-  const addBook = async (item) => {
+  const addBook = async (item: Book) => {
     const payload = {
       title: item.title,
-      authorName: book?.author.name,
-      seriesTitle: book?.series?.title,
-      summary: item?.summary,
-      rating: null,
+      author: { id: 0, name: book?.author ? book.author.name : "" },
+      series: { id: 0, title: book?.series?.title },
+      summary: item.summary,
+      rating: 0,
       readDate: null,
       citations: [],
       smut: [],
-      coverUrl: item?.coverUrl,
+      coverUrl: item.coverUrl,
       isRead: false,
-      tomeNb: item?.tomeNb,
+      tomeNb: item.tomeNb,
+      googleBooksId: item?.googleBooksId,
+      id: -1,
     };
 
     try {
@@ -333,7 +329,7 @@ export default function BookDetail() {
           </Typography>
 
           <Typography variant="h6" sx={{ color: "#777", mb: 2 }}>
-            {book.author.name}
+            {book?.author ? book.author.name : "Auteur inconnu"}
           </Typography>
 
           {book.series && (
@@ -351,7 +347,7 @@ export default function BookDetail() {
           )}
 
           <Box sx={{ display: "flex", gap: 4, mb: 3, flexWrap: "wrap" }}>
-            {book.rating !== null && (
+            {book.rating > 0 && (
               <Box>
                 <Typography variant="caption" color="#888">
                   Note

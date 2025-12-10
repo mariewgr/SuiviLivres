@@ -34,27 +34,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
-
-interface Author {
-  id: number;
-  name: string;
-}
-
-interface Book {
-  id: number;
-  title: string;
-  author: Author;
-  summary?: string | null;
-  coverUrl?: string | null;
-  rating?: number | null;
-  readDate?: string | null;
-  pages?: number | null;
-  tomeNb?: number | null;
-  citations?: string | null;
-  smut?: string | null;
-  isRead?: boolean;
-}
-
+import { Book } from "./App";
 interface Series {
   id: number;
   title: string;
@@ -114,11 +94,11 @@ export default function SeriesDetail() {
       const available = allBooks.filter(
         (book: Book) => !booksInSeries.includes(book.id)
       );
-      const filteredBooks = available.filter((book) => {
+      const filteredBooks = available.filter((book: Book) => {
         const q = searchQuery.toLowerCase();
         return (
-          book.title.toLowerCase().includes(q) ||
-          book.author.name.toLowerCase().includes(q)
+          (book?.title && book?.title.toLowerCase().includes(q)) ||
+          (book?.author && book?.author.name.toLowerCase().includes(q))
         );
       });
 
@@ -218,7 +198,7 @@ export default function SeriesDetail() {
     }
   };
 
-  const onDragEnd = async (result) => {
+  const onDragEnd = async (result: any) => {
     if (!result.destination) return;
 
     var items = Array<Book>();
@@ -505,7 +485,10 @@ export default function SeriesDetail() {
                               size="small"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleRemoveBook(book.id, book.title);
+                                handleRemoveBook(
+                                  book.id,
+                                  book.title ? book.title : ""
+                                );
                               }}
                               title="Retirer de la collection"
                             >
@@ -580,7 +563,7 @@ export default function SeriesDetail() {
                                 color="text.secondary"
                                 gutterBottom
                               >
-                                par {book.author.name}
+                                par {book.author ? book.author.name : ""}
                               </Typography>
 
                               {book.rating && (
@@ -591,16 +574,6 @@ export default function SeriesDetail() {
                                     size="small"
                                   />
                                 </Box>
-                              )}
-
-                              {book.pages && (
-                                <Typography
-                                  variant="caption"
-                                  color="text.secondary"
-                                  sx={{ mt: 1, display: "block" }}
-                                >
-                                  {book.pages} pages
-                                </Typography>
                               )}
 
                               {book.readDate && (
@@ -721,7 +694,7 @@ export default function SeriesDetail() {
                       primary={
                         <Typography fontWeight={500}>{book.title}</Typography>
                       }
-                      secondary={`par ${book.author.name}`}
+                      secondary={`par ${book.author ? book.author.name : ""}`}
                     />
                   </ListItemButton>
                 </ListItem>

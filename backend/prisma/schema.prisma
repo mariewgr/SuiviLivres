@@ -36,8 +36,6 @@ model Book {
   tomeNb    Int?
   summary   String?
   coverUrl  String?
-  bookNodeUrl String?
-  seriesUrl String?
   rating    Int?
   readDate  DateTime?
   citations String?  // Store as JSON string or text

@@ -1,7 +1,8 @@
-import  { searchGoogleBooks, getGoogleBookDetails } from "./utils/googlebooks.js";
+import  { searchGoogleBooks, getGoogleBookDetails , findGoogleBookSequels } from "./utils/googlebooks.js";
 import express from "express";
 import cors from "cors";
 import { PrismaClient } from "@prisma/client";
+import { API_URL } from "../frontend/src/api.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -40,6 +41,31 @@ app.get("/api/googlebooks/details", async (req, res) => {
   } catch (err) {
     console.error("Details Google Books error:", err);
     res.status(500).json({ error: "API call failed" });
+  }
+});
+
+/**
+ * Find sequels/related books in a series
+ * GET /api/googlebooks/sequels
+ * Query params: author, title, volume
+ */
+app.get("/api/googlebooks/sequels", async (req, res) => {
+  try {
+    const { author, title, volume } = req.query;
+    
+    if (!author || !title) {
+      return res.status(400).json({ 
+        error: "Author and title are required" 
+      });
+    }
+
+    const volumeNumber = volume ? parseFloat(volume) : null;
+    const sequels = await findGoogleBookSequels(author, title, volumeNumber);
+    
+    res.json(sequels);
+  } catch (err) {
+    console.error("Error finding sequels:", err);
+    res.status(500).json({ error: "Failed to find sequels" });
   }
 });
 
@@ -82,27 +108,27 @@ app.get("/api/books/:id", async (req, res) => {
 // POST new book
 app.post("/api/books", async (req, res) => {
   try {
-    const { title, authorName, seriesTitle, summary, rating, readDate, citations, smut, tomeNb, coverUrl, bookNodeUrl, seriesUrl, googleBooksId } = req.body;
+    const { title, author, series, summary, rating, readDate, citations, smut, tomeNb, coverUrl, googleBooksId } = req.body;
 
     // Validation
-    if (!title || !authorName) {
+    if (!title) {
       return res.status(400).json({ error: "Title and author name are required" });
     }
 
     // 1️⃣ Upsert author
-    const author = await prisma.author.upsert({
-      where: { name: authorName },
+    let new_author = await prisma.author.upsert({
+      where: { name: author.name },
       update: {},
-      create: { name: authorName },
+      create: { name: author.name },
     });
 
     // 2️⃣ Upsert series
-    let series = null;
-    if (seriesTitle) {
-      series = await prisma.series.upsert({
-        where: { title: seriesTitle },
+    let new_series = null;
+    if (series) {
+      new_series = await prisma.series.upsert({
+        where: { title: series.title },
         update: {},
-        create: { title: seriesTitle },
+        create: { title: series.title },
       });
     }
 
@@ -110,19 +136,17 @@ app.post("/api/books", async (req, res) => {
     const book = await prisma.book.create({
       data: {
         title,
-        authorId: author.id,
-        seriesId: series ? series.id : null,
-        summary: summary || null,
+        authorId: new_author.id,
+        seriesId: new_series ? new_series.id : null,
+        summary: summary,
         coverUrl,
-        bookNodeUrl,
-        seriesUrl,
         googleBooksId: googleBooksId || null,
-        rating: rating ? parseInt(rating) : null,
+        rating: rating,
         readDate: readDate ? new Date(readDate) : null,
-        citations: citations ? (typeof citations === 'string' ? citations : JSON.stringify(citations)) : null,
-        smut: smut ? (typeof smut === 'string' ? smut : JSON.stringify(smut)) : null,
+        citations: JSON.stringify(citations),
+        smut: JSON.stringify(smut),
         isRead: false,
-        tomeNb: tomeNb ? parseFloat(tomeNb) : null,
+        tomeNb: tomeNb,
       },
       include: { author: true, series: true },
     });
@@ -139,28 +163,28 @@ app.post("/api/books", async (req, res) => {
 app.put("/api/books/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, authorName, seriesTitle, summary, rating, readDate, citations, smut, coverUrl, seriesUrl, bookNodeUrl, isRead, tomeNb, googleBooksId } = req.body;
+    const { title, author, series, summary, rating, readDate, citations, smut, coverUrl, isRead, tomeNb, googleBooksId } = req.body;
 
     // Handle author update/creation
     let authorId;
-    if (authorName) {
-      const author = await prisma.author.upsert({
-        where: { name: authorName },
+    if (author.name) {
+      const new_author = await prisma.author.upsert({
+        where: { name: author.name },
         update: {},
-        create: { name: authorName },
+        create: { name: author.name },
       });
-      authorId = author.id;
+      authorId = new_author.id;
     }
 
     // Handle series update/creation
     let seriesId = null;
-    if (seriesTitle) {
-      const series = await prisma.series.upsert({
-        where: { title: seriesTitle },
+    if (series) {
+      const new_series = await prisma.series.upsert({
+        where: { title: series.title },
         update: {},
-        create: { title: seriesTitle },
+        create: { title: series.title  },
       });
-      seriesId = series.id;
+      seriesId = new_series.id;
     }
 
     const book = await prisma.book.update({
@@ -171,18 +195,16 @@ app.put("/api/books/:id", async (req, res) => {
         ...(seriesId !== undefined && { seriesId }),
         ...(summary !== undefined && { summary }),
         ...(coverUrl !== undefined && { coverUrl }),
-        ...(bookNodeUrl !== undefined && { bookNodeUrl }),
-        ...(seriesUrl !== undefined && { seriesUrl }),
         ...(googleBooksId !== undefined && { googleBooksId }),
         ...(rating !== undefined && { rating: rating ? parseInt(rating) : null }),
         ...(readDate !== undefined && { readDate: readDate ? new Date(readDate) : null }),
         ...(tomeNb !== undefined && { tomeNb: parseFloat(tomeNb) }),
         ...(isRead !== undefined && { isRead }),
         ...(citations !== undefined && { 
-          citations: citations ? (typeof citations === 'string' ? citations : JSON.stringify(citations)) : null 
+          citations: citations ? JSON.stringify(citations) : "" 
         }),
         ...(smut !== undefined && { 
-          smut: smut ? (typeof smut === 'string' ? smut : JSON.stringify(smut)) : null 
+          smut: smut ? JSON.stringify(smut) : "" 
         }),
       },
       include: { author: true, series: true },
@@ -287,5 +309,6 @@ process.on("SIGINT", async () => {
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`✅ Backend running on http://localhost:${PORT}`);
+  console.log(`✅ Backend running on 
+    ${API_URL}`);
 });
