@@ -214,31 +214,31 @@ function BookList() {
   };
 
   const handleSelectBook = async (book: ScrapedBook) => {
-    try {
-      const details = await fetch(
-        `${API_URL}/googlebooks/details?id=${encodeURIComponent(
-          book.googleBooksId || book.key
-        )}`
-      ).then((r) => r.json());
+    // try {
+    //   const details = await fetch(
+    //     `${API_URL}/googlebooks/details?id=${encodeURIComponent(
+    //       book.googleBooksId || book.key
+    //     )}`
+    //   ).then((r) => r.json());
 
-      setForm({
-        title: details.title || book.title,
-        authorName: details.author_name?.[0] || book.author_name?.[0] || "",
-        seriesTitle: "", // Google Books n'a pas de séries structurées
-        summary: details.description || "",
-        rating: "",
-        citations: "",
-        smut: "",
-        tomeNb: details.tomeNb,
-        coverUrl: details.cover || book.cover || "",
-      });
+    setForm({
+      title: book.title,
+      authorName: book.author_name?.[0] || "",
+      seriesTitle: "", // Google Books n'a pas de séries structurées
+      summary: book.description || "",
+      rating: "",
+      citations: "",
+      smut: "",
+      tomeNb: parseFloat(book.tomeNb || "-1"),
+      coverUrl: book.cover || "",
+    });
 
-      setSearchDialogOpen(false);
-      setSearchQuery("");
-      setSearchResults([]);
-    } catch (e) {
-      console.log(e);
-    }
+    setSearchDialogOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    // } catch (e) {
+    //   console.log(e);
+    // }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
