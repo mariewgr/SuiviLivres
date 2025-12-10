@@ -1,7 +1,7 @@
-const { searchGoogleBooks, getGoogleBookDetails } = require("./utils/googlebooks.js");
-const express = require("express");
-const cors = require("cors");
-const { PrismaClient } = require("@prisma/client");
+import  { searchGoogleBooks, getGoogleBookDetails } from "./utils/googlebooks.js";
+import express from "express";
+import cors from "cors";
+import { PrismaClient } from "@prisma/client";
 
 const app = express();
 const prisma = new PrismaClient();

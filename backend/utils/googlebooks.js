@@ -2,7 +2,7 @@
  * Google Books API scraper
  * Uses the official Google Books API to search and retrieve book information
  */
-import { extractVolumeFromTitle } from"./bookParser.js";
+import { extractVolumeFromTitle } from "./bookParser.js";
 const GOOGLE_BOOKS_API = "https://www.googleapis.com/books/v1/volumes";
 
 // Use native fetch for Node 18+, or import node-fetch for older versions
