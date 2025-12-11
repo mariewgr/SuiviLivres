@@ -35,6 +35,7 @@ export async function searchGoogleBooks(query) {
       return {
         key: item.id,
         title: cleanTitle || "Unknown Title",
+        originalTitle: volumeInfo.title,
         author_name: volumeInfo.authors || [],
         description: volumeInfo.description || null,
         cover: volumeInfo.imageLinks?.thumbnail?.replace('http:', 'https:') || null,

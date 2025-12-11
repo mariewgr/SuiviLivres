@@ -75,6 +75,7 @@ interface PendingBook {
 interface ScrapedBook {
   key: string;
   title: string;
+  originalTitle: string;
   author_name: string[];
   description: string;
   cover: string;
@@ -913,7 +914,7 @@ function BookList() {
 
                   <CardContent>
                     <Typography variant="h6">{book.title}</Typography>
-
+                    <Typography variant="h6">{book.originalTitle}</Typography>
                     {book?.author_name && (
                       <Typography variant="body2" color="text.secondary">
                         {book?.author_name.join(", ")}
